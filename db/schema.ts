@@ -88,5 +88,22 @@ export const reportAdditions = sqliteTable(
   (table) => [index('idx_report_additions_report').on(table.reportId, table.createdAt)],
 );
 
+export const plentyOrderDrafts = sqliteTable(
+  'plenty_order_drafts',
+  {
+    reportId: text('report_id').primaryKey(),
+    status: text('status', { enum: ['draft', 'created'] }).notNull().default('draft'),
+    customerReference: text('customer_reference').notNull().default(''),
+    billingAddressJson: text('billing_address_json').notNull().default('{}'),
+    deliverySameAsBilling: integer('delivery_same_as_billing').notNull().default(1),
+    deliveryAddressJson: text('delivery_address_json').notNull().default('{}'),
+    positionsJson: text('positions_json').notNull().default('[]'),
+    plentyOrderId: text('plenty_order_id'),
+    createdAt: text('created_at').notNull(),
+    updatedAt: text('updated_at').notNull(),
+  },
+  (table) => [index('idx_plenty_order_drafts_status_updated').on(table.status, table.updatedAt)],
+);
+
 export type WorkReportRow = typeof workReports.$inferSelect;
 export type NewWorkReportRow = typeof workReports.$inferInsert;

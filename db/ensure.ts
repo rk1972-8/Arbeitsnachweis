@@ -75,6 +75,19 @@ export async function ensureDatabase() {
       created_at TEXT NOT NULL
     )`),
     env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_report_additions_report ON report_additions(report_id, created_at)'),
+    env.DB.prepare(`CREATE TABLE IF NOT EXISTS plenty_order_drafts (
+      report_id TEXT PRIMARY KEY NOT NULL,
+      status TEXT DEFAULT 'draft' NOT NULL,
+      customer_reference TEXT DEFAULT '' NOT NULL,
+      billing_address_json TEXT DEFAULT '{}' NOT NULL,
+      delivery_same_as_billing INTEGER DEFAULT 1 NOT NULL,
+      delivery_address_json TEXT DEFAULT '{}' NOT NULL,
+      positions_json TEXT DEFAULT '[]' NOT NULL,
+      plenty_order_id TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    )`),
+    env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_plenty_order_drafts_status_updated ON plenty_order_drafts(status, updated_at)'),
     env.DB.prepare('PRAGMA optimize'),
   ]);
   initialized = true;

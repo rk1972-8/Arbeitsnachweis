@@ -1,4 +1,4 @@
-import type { ArticleMatch, Customer, NewCustomerInput } from './types';
+import type { ArticleMatch, Customer, NewCustomerInput, OrderAddress, PlentyOrderPosition } from './types';
 
 type PlentyEnv = Pick<Cloudflare.Env, 'PLENTY_BASE_URL' | 'PLENTY_USERNAME' | 'PLENTY_PASSWORD'>;
 
@@ -59,22 +59,38 @@ function optionValue(options: unknown, typeIds: number[]): string {
   return String(item?.value ?? '').trim();
 }
 
-function bestAddress(addresses: unknown): Record<string, unknown> {
-  if (!Array.isArray(addresses)) return {};
-  const rows = addresses.map((entry) => {
-    if (!entry || typeof entry !== 'object') return {};
+function addressRows(addresses: unknown): Array<{ relation: Record<string, unknown>; address: Record<string, unknown> }> {
+  if (!Array.isArray(addresses)) return [];
+  return addresses.map((entry) => {
+    if (!entry || typeof entry !== 'object') return { relation: {}, address: {} };
     const row = entry as Record<string, unknown>;
-    return row.address && typeof row.address === 'object' ? row.address as Record<string, unknown> : row;
+    return {
+      relation: row,
+      address: row.address && typeof row.address === 'object' ? row.address as Record<string, unknown> : row,
+    };
   });
-  return rows.find((row) => {
-    const pivot = row.pivot && typeof row.pivot === 'object' ? row.pivot as Record<string, unknown> : {};
-    return row.isPrimary === true || Number(row.isPrimary) === 1 || pivot.isPrimary === true || Number(pivot.isPrimary) === 1;
-  }) ?? rows[0] ?? {};
+}
+
+function relationValue(row: { relation: Record<string, unknown>; address: Record<string, unknown> }, key: string) {
+  const pivot = row.relation.pivot && typeof row.relation.pivot === 'object' ? row.relation.pivot as Record<string, unknown> : {};
+  return row.relation[key] ?? pivot[key] ?? row.address[key];
+}
+
+function bestAddress(addresses: unknown, typeId = 1): Record<string, unknown> {
+  const rows = addressRows(addresses);
+  const typed = rows.filter((row) => Number(relationValue(row, 'typeId') ?? relationValue(row, 'addressTypeId')) === typeId);
+  const candidates = typed.length ? typed : rows;
+  const selected = candidates.find((row) => {
+    const value = relationValue(row, 'isPrimary');
+    return value === true || Number(value) === 1;
+  }) ?? candidates[0];
+  return selected?.address ?? {};
 }
 
 function mapCustomer(input: unknown): Customer {
   const contact = input && typeof input === 'object' ? input as Record<string, unknown> : {};
-  const address = bestAddress(contact.addresses);
+  const address = bestAddress(contact.addresses, 1);
+  const deliveryAddress = bestAddress(contact.addresses, 2);
   const accounts = Array.isArray(contact.accounts) ? contact.accounts as Array<Record<string, unknown>> : [];
   const firstName = String(contact.firstName ?? '').trim();
   const lastName = String(contact.lastName ?? '').trim();
@@ -98,7 +114,20 @@ function mapCustomer(input: unknown): Customer {
     gender: String(contact.gender ?? address.gender ?? '').trim(),
     formOfAddress: String(contact.formOfAddress ?? '').trim(),
     title: String(contact.title ?? '').trim(),
+    plentyId: Number(contact.plentyId) || undefined,
+    billingAddressId: String(address.id ?? '').trim() || undefined,
+    deliveryAddressId: String(deliveryAddress.id ?? '').trim() || undefined,
   };
+}
+
+export async function getCustomer(runtime: PlentyEnv, contactId: string): Promise<Customer> {
+  const baseUrl = required(runtime.PLENTY_BASE_URL, 'PLENTY_BASE_URL').replace(/\/$/, '');
+  const token = await getToken(runtime);
+  const response = await fetch(`${baseUrl}/accounts/contacts/${encodeURIComponent(contactId)}?with=options,accounts,addresses`, {
+    headers: { authorization: `Bearer ${token}`, accept: 'application/json' },
+  });
+  if (!response.ok) throw new Error(`Plenty-Kundendaten konnten nicht geladen werden (HTTP ${response.status}).`);
+  return mapCustomer(await response.json());
 }
 
 export async function searchCustomers(runtime: PlentyEnv, query: string): Promise<Customer[]> {
@@ -160,6 +189,24 @@ function mapArticle(input: unknown): ArticleMatch | null {
   const variationId = String(variation.id ?? variation.variationId ?? '');
   const itemId = String(variation.itemId ?? item.id ?? '');
   if (!variationId || !itemId) return null;
+  const salesPrices = variation.variationSalesPrices ?? variation.salesPrices;
+  const priceRows = (Array.isArray(salesPrices) ? salesPrices : [])
+    .filter((entry): entry is Record<string, unknown> => Boolean(entry) && typeof entry === 'object')
+    .map((entry) => {
+      const config = entry.salesPrice && typeof entry.salesPrice === 'object' ? entry.salesPrice as Record<string, unknown> : {};
+      const price = Number(entry.price ?? entry.value);
+      const currencies = Array.isArray(config.currencies) ? config.currencies as Array<Record<string, unknown>> : [];
+      return {
+        price,
+        salesPriceId: String(entry.salesPriceId ?? config.id ?? ''),
+        currency: String(entry.currency ?? currencies[0]?.currency ?? currencies[0]?.name ?? 'EUR'),
+        preferred: config.isDisplayedByDefault === true || config.type === 'default',
+      };
+    })
+    .filter((entry) => Number.isFinite(entry.price));
+  const selectedPrice = priceRows.find((entry) => entry.preferred && entry.price > 0)
+    ?? priceRows.find((entry) => entry.price > 0)
+    ?? priceRows[0];
   return {
     variationId,
     itemId,
@@ -167,6 +214,9 @@ function mapArticle(input: unknown): ArticleMatch | null {
     variationName: firstText(variation.name, translatedName(variation.names ?? variation.variationNames)),
     model: String(variation.model ?? variation.customNumber ?? variation.number ?? '').trim(),
     isActive: variation.isActive !== false && Number(variation.isActive) !== 0,
+    priceGross: selectedPrice?.price,
+    currency: selectedPrice?.currency || 'EUR',
+    salesPriceId: selectedPrice?.salesPriceId,
   };
 }
 
@@ -179,7 +229,7 @@ async function loadArticleCatalog(runtime: PlentyEnv): Promise<ArticleMatch[]> {
     url.searchParams.set('page', String(page));
     url.searchParams.set('itemsPerPage', '250');
     url.searchParams.set('isActive', 'true');
-    url.searchParams.set('with', 'item');
+    url.searchParams.set('with', 'item,variationSalesPrices');
     const response = await fetch(url, { headers: { authorization: `Bearer ${token}`, accept: 'application/json' } });
     if (!response.ok) throw new Error(`Plenty-Artikelkatalog konnte nicht geladen werden (HTTP ${response.status}).`);
     return response.json() as Promise<Record<string, unknown>>;
@@ -235,7 +285,20 @@ export async function searchArticles(runtime: PlentyEnv, query: string): Promise
     if (wanted === 'anfahrt' || wanted === 'anfahrtspauschale') return true;
     return entry.aliases.some((alias) => normalize(alias) === wanted);
   });
-  if (known.length) return known.map(({ aliases: _aliases, ...entry }) => entry);
+  if (known.length) {
+    try {
+      const hydrated = await findArticlesByVariationIds(runtime, known.map((entry) => entry.variationId));
+      return known.map(({ aliases, ...entry }) => {
+        void aliases;
+        return hydrated.get(entry.variationId) ?? entry;
+      });
+    } catch {
+      return known.map(({ aliases, ...entry }) => {
+        void aliases;
+        return entry;
+      });
+    }
+  }
 
   const catalog = await loadArticleCatalog(runtime);
   const rawTokens = wanted.split(/[^a-z0-9]+/).filter((token) => token.length >= 2);
@@ -275,6 +338,212 @@ export async function searchArticles(runtime: PlentyEnv, query: string): Promise
     .slice(0, 40)
     .map((row) => row.entry);
   return enrichArticleTitles(runtime, matches);
+}
+
+export async function findArticlesByVariationIds(runtime: PlentyEnv, variationIds: string[]): Promise<Map<string, ArticleMatch>> {
+  const ids = [...new Set(variationIds.map((value) => value.trim()).filter(Boolean))];
+  const baseUrl = required(runtime.PLENTY_BASE_URL, 'PLENTY_BASE_URL').replace(/\/$/, '');
+  const token = await getToken(runtime);
+  const direct = await Promise.all(ids.map(async (variationId) => {
+    try {
+      const response = await fetch(`${baseUrl}/items/variations/${encodeURIComponent(variationId)}?with=item,variationSalesPrices`, {
+        headers: { authorization: `Bearer ${token}`, accept: 'application/json' },
+      });
+      if (!response.ok) return null;
+      return mapArticle(await response.json());
+    } catch {
+      return null;
+    }
+  }));
+  const found = direct.filter((entry): entry is ArticleMatch => Boolean(entry));
+  const missing = ids.filter((id) => !found.some((entry) => entry.variationId === id));
+  if (missing.length) {
+    const catalog = await loadArticleCatalog(runtime);
+    found.push(...catalog.filter((entry) => missing.includes(entry.variationId)));
+  }
+  const enriched = await enrichArticleTitles(runtime, found);
+  return new Map(enriched.map((entry) => [entry.variationId, entry]));
+}
+
+type PlentyOrderInput = {
+  customerId: string;
+  customerPlentyId?: number;
+  customerReference: string;
+  billingAddress: OrderAddress;
+  deliverySameAsBilling: boolean;
+  deliveryAddress: OrderAddress;
+  positions: PlentyOrderPosition[];
+};
+
+type PlentyOrderResult = {
+  orderId: string;
+  billingAddressId: string;
+  deliveryAddressId: string;
+};
+
+function payloadEntries(payload: unknown): Record<string, unknown>[] {
+  if (Array.isArray(payload)) return payload.filter((entry): entry is Record<string, unknown> => Boolean(entry) && typeof entry === 'object');
+  if (!payload || typeof payload !== 'object') return [];
+  const row = payload as Record<string, unknown>;
+  if (Array.isArray(row.entries)) return payloadEntries(row.entries);
+  if (Array.isArray(row.data)) return payloadEntries(row.data);
+  return [row];
+}
+
+async function plentyJson(runtime: PlentyEnv, path: string, init?: RequestInit) {
+  const baseUrl = required(runtime.PLENTY_BASE_URL, 'PLENTY_BASE_URL').replace(/\/$/, '');
+  const token = await getToken(runtime);
+  const response = await fetch(`${baseUrl}${path}`, {
+    ...init,
+    headers: {
+      authorization: `Bearer ${token}`,
+      accept: 'application/json',
+      ...(init?.body ? { 'content-type': 'application/json' } : {}),
+      ...init?.headers,
+    },
+  });
+  const text = await response.text();
+  let payload: unknown = {};
+  try { payload = text ? JSON.parse(text) : {}; } catch { payload = { message: text }; }
+  return { response, payload };
+}
+
+async function createContactAddress(runtime: PlentyEnv, customerId: string, address: OrderAddress, typeId: 1 | 2) {
+  const { response, payload } = await plentyJson(runtime, '/accounts/addresses', {
+    method: 'POST',
+    body: JSON.stringify({
+      name1: address.company.trim(),
+      name2: address.firstName.trim(),
+      name3: address.lastName.trim(),
+      address1: address.street.trim(),
+      address2: address.houseNumber.trim(),
+      postalCode: address.zip.trim(),
+      town: address.city.trim(),
+      countryId: address.countryId || 1,
+      contactRelations: [{ contactId: Number(customerId), typeId, isPrimary: false }],
+    }),
+  });
+  if (!response.ok) throw new Error(`Die ${typeId === 1 ? 'Rechnungs' : 'Liefer'}adresse konnte in Plenty nicht angelegt werden (HTTP ${response.status}).`);
+  const row = payload && typeof payload === 'object' ? payload as Record<string, unknown> : {};
+  const id = String(row.id ?? (row.data as Record<string, unknown> | undefined)?.id ?? '');
+  if (!id) throw new Error('Plenty hat für die neue Adresse keine ID zurückgegeben.');
+  return id;
+}
+
+function numberFrom(row: Record<string, unknown> | undefined, ...keys: string[]) {
+  for (const key of keys) {
+    const value = Number(row?.[key]);
+    if (Number.isFinite(value) && value > 0) return value;
+  }
+  return 0;
+}
+
+export async function createPlentyOrder(runtime: PlentyEnv, input: PlentyOrderInput): Promise<PlentyOrderResult> {
+  const customer = await getCustomer(runtime, input.customerId);
+  const plentyId = input.customerPlentyId || customer.plentyId || 0;
+
+  const locationResponses = await Promise.all([
+    plentyJson(runtime, `/accounting/locations${plentyId ? `?plentyId=${plentyId}` : ''}`),
+    plentyJson(runtime, '/accounting/locations'),
+  ]);
+  const locations = locationResponses.flatMap((entry) => entry.response.ok ? payloadEntries(entry.payload) : []);
+  const location = locations.find((row) => Number(row.plentyId) === plentyId && Number(row.countryId) === 1)
+    ?? locations.find((row) => Number(row.plentyId) === plentyId)
+    ?? locations.find((row) => Number(row.countryId) === 1)
+    ?? locations[0];
+  const locationId = numberFrom(location, 'id', 'locationId');
+  const resolvedPlentyId = plentyId || numberFrom(location, 'plentyId');
+  if (!locationId || !resolvedPlentyId) throw new Error('Mandant und Buchhaltungsstandort konnten in Plenty nicht automatisch ermittelt werden.');
+
+  const embeddedVats = payloadEntries(location?.vats);
+  const vatResponses = embeddedVats.length ? [] : await Promise.all([
+    plentyJson(runtime, `/accounting/vats?locationId=${locationId}&countryId=1`),
+    plentyJson(runtime, `/accounting/vats?locationId=${locationId}`),
+  ]);
+  const vats = embeddedVats.length ? embeddedVats : vatResponses.flatMap((entry) => entry.response.ok ? payloadEntries(entry.payload) : []);
+  const vat = vats.find((row) => row.isActive === true && Number(row.countryId) === 1)
+    ?? vats.find((row) => row.isStandard === true && Number(row.countryId) === 1)
+    ?? vats.find((row) => Number(row.countryId) === 1)
+    ?? vats[0];
+  const countryVatId = numberFrom(vat, 'id', 'countryVatId');
+  const vatRates = payloadEntries(vat?.vatRates);
+  const standardVat = vatRates.find((row) => Number(row.vatField ?? row.field) === 0) ?? vatRates[0];
+  const vatRate = numberFrom(standardVat, 'vatRate', 'rate', 'value') || 19;
+  if (!countryVatId) throw new Error('Die deutsche Umsatzsteuer-Konfiguration konnte in Plenty nicht ermittelt werden.');
+
+  const [warehouseResponse, shippingResponse] = await Promise.all([
+    plentyJson(runtime, '/stockmanagement/warehouses'),
+    plentyJson(runtime, '/orders/shipping/presets'),
+  ]);
+  const warehouses = warehouseResponse.response.ok ? payloadEntries(warehouseResponse.payload) : [];
+  const shippingProfiles = shippingResponse.response.ok ? payloadEntries(shippingResponse.payload) : [];
+  const warehouse = warehouses.find((row) => row.isActive !== false) ?? warehouses[0];
+  const shippingProfile = shippingProfiles.find((row) => row.isDefault === true || row.isDefaultShippingProfile === true)
+    ?? shippingProfiles.find((row) => row.isActive !== false)
+    ?? shippingProfiles[0];
+  const warehouseId = numberFrom(warehouse, 'id', 'warehouseId') || 1;
+  const shippingProfileId = numberFrom(shippingProfile, 'id', 'profileId', 'shippingProfileId') || 1;
+
+  const billingAddressId = input.billingAddress.addressId || customer.billingAddressId
+    || await createContactAddress(runtime, input.customerId, input.billingAddress, 1);
+  const deliveryAddressId = input.deliverySameAsBilling
+    ? billingAddressId
+    : input.deliveryAddress.addressId || await createContactAddress(runtime, input.customerId, input.deliveryAddress, 2);
+
+  const orderBody = {
+    typeId: 1,
+    statusId: 3,
+    referrerId: 1,
+    plentyId: resolvedPlentyId,
+    locationId,
+    relations: [
+      { referenceType: 'warehouse', referenceId: warehouseId, relation: 'sender' },
+      { referenceType: 'contact', referenceId: Number(input.customerId), relation: 'receiver' },
+    ],
+    addressRelations: [
+      { typeId: 1, addressId: Number(billingAddressId) },
+      { typeId: 2, addressId: Number(deliveryAddressId) },
+    ],
+    properties: [
+      { typeId: 1, value: String(warehouseId) },
+      { typeId: 2, value: String(shippingProfileId) },
+      { typeId: 6, value: 'de' },
+      { typeId: 8, value: input.customerReference.trim() },
+    ],
+    orderItems: input.positions.map((position, index) => ({
+      typeId: 1,
+      quantity: position.quantity,
+      orderItemName: position.title,
+      itemVariationId: Number(position.variationId),
+      countryVatId,
+      vatField: 0,
+      vatRate,
+      referrerId: 1,
+      position: index,
+      warehouseId,
+      shippingProfileId,
+      properties: [
+        { typeId: 1, value: String(warehouseId) },
+        { typeId: 2, value: String(shippingProfileId) },
+      ],
+      amounts: [{
+        isSystemCurrency: true,
+        currency: position.currency || 'EUR',
+        exchangeRate: 1,
+        priceOriginalGross: Number(position.priceGross),
+      }],
+    })),
+  };
+  const { response, payload } = await plentyJson(runtime, '/orders', { method: 'POST', body: JSON.stringify(orderBody) });
+  if (!response.ok) {
+    const row = payload && typeof payload === 'object' ? payload as Record<string, unknown> : {};
+    const detail = String(row.message ?? row.error ?? '').trim();
+    throw new Error(`Plenty konnte den Auftrag nicht anlegen (HTTP ${response.status})${detail ? `: ${detail.slice(0, 300)}` : '.'}`);
+  }
+  const row = payload && typeof payload === 'object' ? payload as Record<string, unknown> : {};
+  const orderId = String(row.id ?? row.orderId ?? (row.data as Record<string, unknown> | undefined)?.id ?? '');
+  if (!orderId) throw new Error('Plenty hat keine Auftrags-ID zurückgegeben.');
+  return { orderId, billingAddressId, deliveryAddressId };
 }
 
 function validateNewCustomer(input: NewCustomerInput) {

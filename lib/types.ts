@@ -14,6 +14,9 @@ export type Customer = {
   gender?: string;
   formOfAddress?: string;
   title?: string;
+  plentyId?: number;
+  billingAddressId?: string;
+  deliveryAddressId?: string;
 };
 
 export type NewCustomerInput = {
@@ -53,6 +56,47 @@ export type ArticleMatch = {
   variationName: string;
   model: string;
   isActive: boolean;
+  priceGross?: number;
+  currency?: string;
+  salesPriceId?: string;
+};
+
+export type OrderAddress = {
+  company: string;
+  firstName: string;
+  lastName: string;
+  street: string;
+  houseNumber: string;
+  zip: string;
+  city: string;
+  countryId: number;
+  addressId?: string;
+};
+
+export type PlentyOrderPosition = {
+  id: string;
+  quantity: number;
+  unit: string;
+  title: string;
+  itemId: string;
+  variationId: string;
+  priceGross: number | null;
+  currency: string;
+  sourceType?: PositionRow['sourceType'] | 'addition';
+};
+
+export type PlentyOrderDraft = {
+  reportId: string;
+  reportNumber: string;
+  status: 'draft' | 'created';
+  customerId: string;
+  customerLabel: string;
+  customerReference: string;
+  billingAddress: OrderAddress;
+  deliverySameAsBilling: boolean;
+  deliveryAddress: OrderAddress;
+  positions: PlentyOrderPosition[];
+  plentyOrderId?: string;
 };
 
 export type WorkReportDraft = {
