@@ -442,33 +442,41 @@ export async function createPlentyOrder(runtime: PlentyEnv, input: PlentyOrderIn
   const customer = await getCustomer(runtime, input.customerId);
   const plentyId = input.customerPlentyId || customer.plentyId || 0;
 
-  const locationResponses = await Promise.all([
-    plentyJson(runtime, `/accounting/locations${plentyId ? `?plentyId=${plentyId}` : ''}`),
-    plentyJson(runtime, '/accounting/locations'),
+  const [webstoreResponse, recentOrderResponse] = await Promise.all([
+    plentyJson(runtime, '/webstores'),
+    plentyJson(runtime, '/orders?itemsPerPage=20&page=1&typeId=1'),
   ]);
-  const locations = locationResponses.flatMap((entry) => entry.response.ok ? payloadEntries(entry.payload) : []);
-  const location = locations.find((row) => Number(row.plentyId) === plentyId && Number(row.countryId) === 1)
-    ?? locations.find((row) => Number(row.plentyId) === plentyId)
-    ?? locations.find((row) => Number(row.countryId) === 1)
-    ?? locations[0];
-  const locationId = numberFrom(location, 'id', 'locationId');
-  const resolvedPlentyId = plentyId || numberFrom(location, 'plentyId');
+  const webstores = webstoreResponse.response.ok ? payloadEntries(webstoreResponse.payload) : [];
+  const recentOrders = recentOrderResponse.response.ok ? payloadEntries(recentOrderResponse.payload) : [];
+  const webstore = webstores.find((row) => numberFrom(row, 'storeIdentifier', 'plentyId') === plentyId)
+    ?? webstores.find((row) => Number(row.id) === 0)
+    ?? webstores[0];
+  const configuration = webstore?.configuration && typeof webstore.configuration === 'object'
+    ? webstore.configuration as Record<string, unknown>
+    : undefined;
+  const recentOrder = recentOrders.find((row) => Number(row.plentyId) === plentyId) ?? recentOrders[0];
+  const resolvedPlentyId = plentyId
+    || numberFrom(webstore, 'storeIdentifier', 'plentyId')
+    || numberFrom(recentOrder, 'plentyId');
+  const locationId = numberFrom(configuration, 'defaultAccountingLocation', 'locationId')
+    || numberFrom(recentOrder, 'locationId');
   if (!locationId || !resolvedPlentyId) throw new Error('Mandant und Buchhaltungsstandort konnten in Plenty nicht automatisch ermittelt werden.');
 
-  const embeddedVats = payloadEntries(location?.vats);
-  const vatResponses = embeddedVats.length ? [] : await Promise.all([
-    plentyJson(runtime, `/accounting/vats?locationId=${locationId}&countryId=1`),
-    plentyJson(runtime, `/accounting/vats?locationId=${locationId}`),
+  const vatResponses = await Promise.all([
+    plentyJson(runtime, `/vat/locations/${locationId}/countries/1`),
+    plentyJson(runtime, `/vat/locations/${locationId}`),
   ]);
-  const vats = embeddedVats.length ? embeddedVats : vatResponses.flatMap((entry) => entry.response.ok ? payloadEntries(entry.payload) : []);
+  const vats = vatResponses.flatMap((entry) => entry.response.ok ? payloadEntries(entry.payload) : []);
   const vat = vats.find((row) => row.isActive === true && Number(row.countryId) === 1)
     ?? vats.find((row) => row.isStandard === true && Number(row.countryId) === 1)
     ?? vats.find((row) => Number(row.countryId) === 1)
     ?? vats[0];
-  const countryVatId = numberFrom(vat, 'id', 'countryVatId');
+  const recentOrderItems = payloadEntries(recentOrder?.orderItems);
+  const recentOrderItem = recentOrderItems.find((row) => numberFrom(row, 'countryVatId')) ?? recentOrderItems[0];
+  const countryVatId = numberFrom(vat, 'id', 'countryVatId') || numberFrom(recentOrderItem, 'countryVatId');
   const vatRates = payloadEntries(vat?.vatRates);
-  const standardVat = vatRates.find((row) => Number(row.vatField ?? row.field) === 0) ?? vatRates[0];
-  const vatRate = numberFrom(standardVat, 'vatRate', 'rate', 'value') || 19;
+  const standardVat = vatRates.find((row) => Number(row.vatField ?? row.field ?? row.id) === 0) ?? vatRates[0];
+  const vatRate = numberFrom(standardVat, 'vatRate', 'rate', 'value') || numberFrom(recentOrderItem, 'vatRate') || 19;
   if (!countryVatId) throw new Error('Die deutsche Umsatzsteuer-Konfiguration konnte in Plenty nicht ermittelt werden.');
 
   const [warehouseResponse, shippingResponse] = await Promise.all([
