@@ -3,12 +3,14 @@
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { CRM_CHANNELS, CRM_PRIORITIES, CRM_STATUSES, whatsappUrl, type CrmLead, type CrmLeadEvent } from '../../../lib/crm';
+import type { CrmContactExtraction } from '../../../lib/crm-contact-extraction';
 import type { Customer } from '../../../lib/types';
+import { CrmLeadCapture } from './crm-lead-capture';
 
 type LeadResponse = { lead?: CrmLead; events?: CrmLeadEvent[]; error?: string };
-type NewLead = Record<'source' | 'first_name' | 'last_name' | 'company' | 'phone' | 'email' | 'interest' | 'summary', string>;
+type NewLead = Record<'source' | 'first_name' | 'last_name' | 'company' | 'phone' | 'email' | 'street' | 'house_number' | 'zip' | 'city' | 'interest' | 'manufacturer' | 'rooms' | 'area' | 'summary', string>;
 
-const emptyLead: NewLead = { source: 'Manuell', first_name: '', last_name: '', company: '', phone: '', email: '', interest: '', summary: '' };
+const emptyLead: NewLead = { source: 'Manuell', first_name: '', last_name: '', company: '', phone: '', email: '', street: '', house_number: '', zip: '', city: '', interest: '', manufacturer: '', rooms: '', area: '', summary: '' };
 const visibleStatuses = CRM_STATUSES.filter((item) => item !== 'Gelöscht');
 
 function displayName(lead: CrmLead) {
@@ -71,6 +73,31 @@ export function CrmPanel({ adminName }: { adminName: string }) {
 
   function edit<K extends keyof CrmLead>(key: K, value: CrmLead[K]) {
     setSelected((current) => current ? { ...current, [key]: value } : current);
+  }
+
+  function applyExtraction(result: CrmContactExtraction) {
+    setNewLead((current) => ({
+      ...current,
+      source: result.source || current.source,
+      company: result.company || current.company,
+      first_name: result.first_name || current.first_name,
+      last_name: result.last_name || current.last_name,
+      phone: result.phone || current.phone,
+      email: result.email || current.email,
+      street: result.street || current.street,
+      house_number: result.house_number || current.house_number,
+      zip: result.zip || current.zip,
+      city: result.city || current.city,
+      interest: result.interest || current.interest,
+      manufacturer: result.manufacturer || current.manufacturer,
+      rooms: result.rooms || current.rooms,
+      area: result.area || current.area,
+      summary: result.summary || current.summary,
+    }));
+    setError('');
+    setNotice(result.review_notes.length
+      ? `Angaben wurden übernommen. Bitte prüfen: ${result.review_notes.join(' · ')}`
+      : 'Angaben wurden übernommen. Bitte vor dem Speichern kurz prüfen.');
   }
 
   async function createLead(event: React.FormEvent) {
@@ -138,7 +165,29 @@ export function CrmPanel({ adminName }: { adminName: string }) {
       <div className="crm-heading"><div><span className="eyebrow">Angemeldet als {adminName}</span><h1>CRM & Leads</h1><p>Anfragen, Kontakte und die Übergabe an Plenty zentral verwalten.</p></div><button className="primary-button" onClick={() => setShowNew((value) => !value)} type="button">{showNew ? 'Schließen' : '+ Neuer Lead'}</button></div>
       {notice ? <div className="alert success-alert">{notice}</div> : null}
       {error ? <div className="alert error-alert">{error}</div> : null}
-      {showNew ? <form className="crm-new-card" onSubmit={createLead}><div className="form-card-head"><div><span className="card-kicker">Neue Anfrage</span><h2>Lead erfassen</h2></div></div><div className="crm-form-grid"><label><span>Quelle</span><select value={newLead.source} onChange={(event) => setNewLead({ ...newLead, source: event.target.value })}><option>Manuell</option><option>Telefon</option><option>E-Mail</option><option>Website</option><option>Fonio</option><option>Drive-PDF</option></select></label><label><span>Firma</span><input value={newLead.company} onChange={(event) => setNewLead({ ...newLead, company: event.target.value })} /></label><label><span>Vorname</span><input value={newLead.first_name} onChange={(event) => setNewLead({ ...newLead, first_name: event.target.value })} /></label><label><span>Nachname</span><input value={newLead.last_name} onChange={(event) => setNewLead({ ...newLead, last_name: event.target.value })} /></label><label><span>Telefon</span><input type="tel" value={newLead.phone} onChange={(event) => setNewLead({ ...newLead, phone: event.target.value })} /></label><label><span>E-Mail</span><input type="email" value={newLead.email} onChange={(event) => setNewLead({ ...newLead, email: event.target.value })} /></label><label className="wide"><span>Interesse / Anliegen</span><input value={newLead.interest} onChange={(event) => setNewLead({ ...newLead, interest: event.target.value })} /></label><label className="wide"><span>Zusammenfassung</span><textarea value={newLead.summary} onChange={(event) => setNewLead({ ...newLead, summary: event.target.value })} /></label></div><button className="primary-button" disabled={busy === 'create'} type="submit">{busy === 'create' ? 'Speichere …' : 'Lead anlegen'}</button></form> : null}
+      {showNew ? <form className="crm-new-card" onSubmit={createLead}>
+        <div className="form-card-head"><div><span className="card-kicker">Neue Anfrage</span><h2>Lead erfassen</h2></div></div>
+        <CrmLeadCapture onExtract={applyExtraction} />
+        <div className="crm-review-heading"><span className="card-kicker">Prüfen und ergänzen</span><h3>Erkannte Kundendaten</h3><p>Leere oder falsch erkannte Angaben kannst du hier korrigieren.</p></div>
+        <div className="crm-form-grid">
+          <label><span>Quelle</span><select value={newLead.source} onChange={(event) => setNewLead({ ...newLead, source: event.target.value })}><option>Manuell</option><option>Diktat</option><option>Text</option><option>Foto</option><option>Telefon</option><option>E-Mail</option><option>Website</option><option>Fonio</option><option>Drive-PDF</option></select></label>
+          <label><span>Firma</span><input value={newLead.company} onChange={(event) => setNewLead({ ...newLead, company: event.target.value })} /></label>
+          <label><span>Vorname</span><input value={newLead.first_name} onChange={(event) => setNewLead({ ...newLead, first_name: event.target.value })} /></label>
+          <label><span>Nachname</span><input value={newLead.last_name} onChange={(event) => setNewLead({ ...newLead, last_name: event.target.value })} /></label>
+          <label><span>Telefon</span><input type="tel" value={newLead.phone} onChange={(event) => setNewLead({ ...newLead, phone: event.target.value })} /></label>
+          <label><span>E-Mail</span><input type="email" value={newLead.email} onChange={(event) => setNewLead({ ...newLead, email: event.target.value })} /></label>
+          <label><span>Straße</span><input value={newLead.street} onChange={(event) => setNewLead({ ...newLead, street: event.target.value })} /></label>
+          <label><span>Hausnummer</span><input value={newLead.house_number} onChange={(event) => setNewLead({ ...newLead, house_number: event.target.value })} /></label>
+          <label><span>PLZ</span><input value={newLead.zip} onChange={(event) => setNewLead({ ...newLead, zip: event.target.value })} /></label>
+          <label><span>Ort</span><input value={newLead.city} onChange={(event) => setNewLead({ ...newLead, city: event.target.value })} /></label>
+          <label className="wide"><span>Interesse / Anliegen</span><input value={newLead.interest} onChange={(event) => setNewLead({ ...newLead, interest: event.target.value })} /></label>
+          <label><span>Hersteller</span><input value={newLead.manufacturer} onChange={(event) => setNewLead({ ...newLead, manufacturer: event.target.value })} /></label>
+          <label><span>Räume</span><input value={newLead.rooms} onChange={(event) => setNewLead({ ...newLead, rooms: event.target.value })} /></label>
+          <label><span>Fläche</span><input value={newLead.area} onChange={(event) => setNewLead({ ...newLead, area: event.target.value })} /></label>
+          <label className="wide"><span>Zusammenfassung</span><textarea value={newLead.summary} onChange={(event) => setNewLead({ ...newLead, summary: event.target.value })} /></label>
+        </div>
+        <button className="primary-button" disabled={busy === 'create'} type="submit">{busy === 'create' ? 'Speichere …' : 'Geprüften Lead anlegen'}</button>
+      </form> : null}
       <div className="crm-filters"><input aria-label="Leads durchsuchen" placeholder="Name, Firma, Telefon, E-Mail, Ort oder Anliegen suchen …" value={query} onChange={(event) => setQuery(event.target.value)} /><div className="crm-statuses"><button className={!status ? 'active' : ''} onClick={() => setStatus('')} type="button">Alle <b>{Object.entries(counts).filter(([name]) => name !== 'Gelöscht').reduce((sum, [, count]) => sum + count, 0)}</b></button>{visibleStatuses.map((item) => <button className={status === item ? 'active' : ''} key={item} onClick={() => setStatus(item)} type="button">{item} <b>{counts[item] ?? 0}</b></button>)}</div></div>
       <div className="crm-workspace">
         <aside className="crm-lead-list">{leads.length ? leads.map((lead) => <button className={selected?.id === lead.id ? 'selected' : ''} key={lead.id} onClick={() => void openLead(lead.id)} type="button"><div><span className={`crm-priority priority-${lead.priority.toLowerCase()}`}>{lead.priority}</span><strong>{displayName(lead)}</strong><small>{[lead.first_name, lead.last_name].filter(Boolean).join(' ')}{lead.city ? ` · ${lead.city}` : ''}</small></div><div><span>{lead.status}</span><small>{dateTime(lead.last_contact_at)}</small></div></button>) : <div className="empty-state"><strong>Keine Leads gefunden</strong><p>Lege einen neuen Lead an oder ändere den Filter.</p></div>}</aside>
