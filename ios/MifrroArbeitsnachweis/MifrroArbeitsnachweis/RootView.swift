@@ -126,6 +126,3 @@ private struct ConnectionErrorView: View {
     }
 }
 
-#Preview {
-    RootView()
-}
