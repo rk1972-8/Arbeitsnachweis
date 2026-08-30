@@ -41,3 +41,9 @@ tsconfig.tsbuildinfo
 /.wrangler/
 /outputs/
 /work/
+
+# Xcode
+DerivedData/
+*.xcuserstate
+xcuserdata/
+/ios/MifrroArbeitsnachweis/MifrroArbeitsnachweis/Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png
