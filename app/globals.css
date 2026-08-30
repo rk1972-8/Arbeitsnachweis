@@ -35,6 +35,28 @@ body {
 .crm-heading p, .crm-detail-head p, .crm-plenty-card p { margin: 0; color: var(--muted); font-size: 13px; }
 .crm-new-card { margin-bottom: 20px; padding: 22px; border: 1px solid var(--line); border-radius: 16px; background: #fff; box-shadow: 0 14px 35px rgba(26,57,46,.06); }
 .crm-new-card h2, .crm-detail h2, .crm-detail h3 { margin: 5px 0 0; }
+.crm-capture-card { margin-bottom: 23px; padding: 18px; border: 1px solid #b9d8c9; border-radius: 14px; background: linear-gradient(130deg, #f1faf5, #fff); }
+.crm-capture-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; }
+.crm-capture-head h3, .crm-review-heading h3 { margin: 5px 0 4px; font-size: 17px; }
+.crm-capture-head p, .crm-review-heading p, .crm-photo-input > p { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.5; }
+.crm-capture-tabs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin: 15px 0 11px; padding: 4px; border-radius: 10px; background: #eaf2ee; }
+.crm-capture-tabs button { min-height: 38px; border: 0; border-radius: 8px; background: transparent; color: #55635b; font-size: 11px; font-weight: 800; }
+.crm-capture-tabs button.active { background: #fff; color: var(--brand); box-shadow: 0 3px 10px rgba(23,59,46,.08); }
+.crm-capture-text { position: relative; }
+.crm-capture-text textarea { width: 100%; min-height: 145px; padding: 13px 13px 52px; border: 1px solid #c9d6cf; border-radius: 11px; background: #fff; color: var(--ink); resize: vertical; outline: none; line-height: 1.5; }
+.crm-capture-text textarea:focus { border-color: var(--brand); box-shadow: 0 0 0 3px var(--brand-pale); }
+.crm-capture-text button { position: absolute; right: 9px; bottom: 9px; min-height: 34px; padding: 0 11px; border: 0; border-radius: 8px; background: #203f35; color: #fff; font-size: 10px; font-weight: 800; }
+.crm-capture-text button.listening { background: #a43b30; animation: dictationPulse 1.2s infinite; }
+@keyframes dictationPulse { 50% { opacity: .72; } }
+.crm-photo-input { min-height: 150px; display: grid; place-items: center; align-content: center; gap: 10px; padding: 16px; border: 1px dashed #aebfb6; border-radius: 11px; background: #fff; text-align: center; }
+.crm-photo-input > label input { position: absolute; width: 1px; height: 1px; overflow: hidden; opacity: 0; }
+.crm-photo-input > label span { display: inline-flex; align-items: center; min-height: 43px; padding: 0 15px; border-radius: 9px; background: var(--brand); color: #fff; font-size: 11px; font-weight: 800; cursor: pointer; }
+.crm-photo-preview { width: 100%; display: grid; grid-template-columns: 92px 1fr; gap: 13px; align-items: center; text-align: left; }
+.crm-photo-preview img { width: 92px; height: 92px; object-fit: cover; border-radius: 9px; border: 1px solid var(--line); }
+.crm-photo-preview strong { display: block; overflow: hidden; text-overflow: ellipsis; font-size: 11px; white-space: nowrap; }
+.crm-photo-preview button { margin-top: 8px; padding: 0; border: 0; background: transparent; color: #9b352c; font-size: 10px; font-weight: 800; }
+.crm-analyze-contact { width: 100%; margin-top: 11px; }
+.crm-review-heading { margin: 0 0 14px; padding-top: 2px; }
 .crm-form-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 13px; }
 .crm-form-grid label { display: grid; gap: 6px; }
 .crm-form-grid label > span { font-size: 11px; font-weight: 800; }
@@ -92,6 +114,7 @@ body {
 @media (max-width: 620px) {
   .crm-content { width: min(100% - 24px, 1500px); padding-top: 22px; }
   .crm-heading, .crm-detail-head, .crm-plenty-card { align-items: stretch; flex-direction: column; }
+  .crm-capture-head { align-items: stretch; flex-direction: column; }
   .crm-form-grid { grid-template-columns: 1fr; }
   .crm-form-grid .wide { grid-column: auto; }
   .crm-event-form { grid-template-columns: 1fr; }
