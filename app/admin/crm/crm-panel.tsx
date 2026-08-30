@@ -159,10 +159,28 @@ export function CrmPanel({ adminName }: { adminName: string }) {
     setBusy('');
   }
 
+  async function reconcileUnknownLeads() {
+    if (!window.confirm('Unbenannte Kontakte jetzt mit Plenty abgleichen? Ohne eindeutigen Treffer werden sie aus der aktiven Liste ausgeblendet.')) return;
+    setBusy('reconcile'); setError(''); setNotice('');
+    try {
+      const response = await fetch('/api/admin/crm/reconcile-plenty', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ apply: true }),
+      });
+      const payload = await response.json() as { candidates?: number; matched?: number; hidden?: number; failed?: number; error?: string };
+      if (!response.ok) throw new Error(payload.error || 'Plenty-Abgleich fehlgeschlagen.');
+      setSelected(null); setEvents([]);
+      setNotice(`${payload.candidates ?? 0} unbenannte Kontakte geprüft: ${payload.matched ?? 0} ergänzt, ${payload.hidden ?? 0} ausgeblendet${payload.failed ? `, ${payload.failed} nicht geprüft` : ''}.`);
+      await loadLeads();
+    } catch (caught) { setError(caught instanceof Error ? caught.message : 'Plenty-Abgleich fehlgeschlagen.'); }
+    finally { setBusy(''); }
+  }
+
   return <main className="admin-shell crm-shell">
     <header className="admin-topbar"><div className="brand-lockup"><span className="brand-mark">M</span><div><p className="brand-name">mifrro</p><p className="brand-product">CRM & Leads</p></div></div><div className="admin-nav"><Link href="/admin">← Verwaltung</Link><Link href="/">Arbeitsnachweis</Link></div></header>
     <section className="crm-content">
-      <div className="crm-heading"><div><span className="eyebrow">Angemeldet als {adminName}</span><h1>CRM & Leads</h1><p>Anfragen, Kontakte und die Übergabe an Plenty zentral verwalten.</p></div><button className="primary-button" onClick={() => setShowNew((value) => !value)} type="button">{showNew ? 'Schließen' : '+ Neuer Lead'}</button></div>
+      <div className="crm-heading"><div><span className="eyebrow">Angemeldet als {adminName}</span><h1>CRM & Leads</h1><p>Anfragen, Kontakte und die Übergabe an Plenty zentral verwalten.</p></div><div className="crm-heading-actions"><button className="secondary-button" disabled={busy === 'reconcile'} onClick={() => void reconcileUnknownLeads()} type="button">{busy === 'reconcile' ? 'Prüfe Plenty …' : 'Unbenannte abgleichen'}</button><button className="primary-button" onClick={() => setShowNew((value) => !value)} type="button">{showNew ? 'Schließen' : '+ Neuer Lead'}</button></div></div>
       {notice ? <div className="alert success-alert">{notice}</div> : null}
       {error ? <div className="alert error-alert">{error}</div> : null}
       {showNew ? <form className="crm-new-card" onSubmit={createLead}>
