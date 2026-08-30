@@ -189,9 +189,14 @@ function fillEmpty(existing: string, incoming: string) {
   return existing.trim() ? existing : incoming;
 }
 
-export async function upsertCrmLead(db: D1Database, input: CrmLeadInput, actor: string) {
+export async function upsertCrmLead(
+  db: D1Database,
+  input: CrmLeadInput,
+  actor: string,
+  options: { allowIncomplete?: boolean } = {},
+) {
   const normalized = normalizedInput(input);
-  if (!normalized.company && !normalized.firstName && !normalized.lastName && !normalized.phone && !normalized.email) {
+  if (!options.allowIncomplete && !normalized.company && !normalized.firstName && !normalized.lastName && !normalized.phone && !normalized.email) {
     throw new Error('Bitte mindestens Name, Firma, Telefonnummer oder E-Mail-Adresse angeben.');
   }
 
