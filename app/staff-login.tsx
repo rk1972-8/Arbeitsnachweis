@@ -1,18 +1,19 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 
-export function StaffLogin() {
-  const [mode, setMode] = useState<'employee' | 'admin'>('employee');
-  const [name, setName] = useState('');
+export function StaffLogin({
+  initialMode = 'employee',
+  initialName = '',
+}: {
+  initialMode?: 'employee' | 'admin';
+  initialName?: string;
+}) {
+  const [mode, setMode] = useState<'employee' | 'admin'>(initialMode);
+  const [name, setName] = useState(initialName);
   const [pin, setPin] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-
-  useEffect(() => {
-    const employee = new URLSearchParams(window.location.search).get('employee');
-    if (employee) setName(employee.slice(0, 100));
-  }, []);
 
   async function login(event: React.FormEvent) {
     event.preventDefault();
@@ -25,7 +26,9 @@ export function StaffLogin() {
       });
       const payload = await response.json() as { authenticated?: boolean; error?: string };
       if (!response.ok || !payload.authenticated) throw new Error(payload.error || 'Anmeldung fehlgeschlagen.');
-      window.location.href = mode === 'admin' ? '/admin' : '/';
+      const requestedPage = new URLSearchParams(window.location.search).get('next');
+      const safeRequestedPage = requestedPage?.startsWith('/') && !requestedPage.startsWith('//') ? requestedPage : '';
+      window.location.href = safeRequestedPage || (mode === 'admin' ? '/admin' : '/');
     } catch (loginError) {
       setError(loginError instanceof Error ? loginError.message : 'Anmeldung fehlgeschlagen.');
     } finally { setBusy(false); }
