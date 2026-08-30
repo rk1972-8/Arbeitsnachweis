@@ -4,6 +4,8 @@ type PlentyEnv = Pick<Cloudflare.Env, 'PLENTY_BASE_URL' | 'PLENTY_USERNAME' | 'P
 
 let tokenCache: { token: string; expiresAt: number } | null = null;
 let articleCache: { entries: ArticleMatch[]; expiresAt: number } | null = null;
+let customerCache: { entries: Customer[]; expiresAt: number } | null = null;
+let customerCachePromise: Promise<Customer[]> | null = null;
 
 const KNOWN_ARTICLES: Array<ArticleMatch & { aliases: string[] }> = [
   {
@@ -152,6 +154,66 @@ export async function searchCustomers(runtime: PlentyEnv, query: string): Promis
         ? (payload as { data: unknown[] }).data
         : [];
   return rows.map(mapCustomer).slice(0, 12);
+}
+
+function contactEntries(payload: unknown): unknown[] {
+  if (Array.isArray(payload)) return payload;
+  if (!payload || typeof payload !== 'object') return [];
+  const row = payload as Record<string, unknown>;
+  if (Array.isArray(row.entries)) return row.entries;
+  if (Array.isArray(row.data)) return row.data;
+  return [];
+}
+
+async function loadCustomerCatalog(runtime: PlentyEnv): Promise<Customer[]> {
+  if (customerCache && customerCache.expiresAt > Date.now()) return customerCache.entries;
+  if (customerCachePromise) return customerCachePromise;
+  customerCachePromise = (async () => {
+    const baseUrl = required(runtime.PLENTY_BASE_URL, 'PLENTY_BASE_URL').replace(/\/$/, '');
+    const token = await getToken(runtime);
+    const pageSize = 100;
+    const loadPage = async (page: number) => {
+      const url = new URL(`${baseUrl}/accounts/contacts`);
+      url.searchParams.set('page', String(page));
+      url.searchParams.set('itemsPerPage', String(pageSize));
+      url.searchParams.set('with', 'options,accounts,addresses');
+      for (let attempt = 0; attempt < 4; attempt += 1) {
+        const response = await fetch(url, { headers: { authorization: `Bearer ${token}`, accept: 'application/json' } });
+        if (response.ok) return response.json() as Promise<Record<string, unknown>>;
+        if (response.status !== 429 || attempt === 3) throw new Error(`Plenty-Kundenstamm konnte nicht geladen werden (HTTP ${response.status}).`);
+        await new Promise((resolve) => setTimeout(resolve, 1_000 * (attempt + 1)));
+      }
+      throw new Error('Plenty-Kundenstamm konnte nicht geladen werden.');
+    };
+    const first = await loadPage(1);
+    const total = Number(first.totalsCount ?? first.totalCount ?? 0);
+    const lastPage = Math.max(1, Math.min(Number(first.lastPageNumber ?? first.lastPage) || Math.ceil(total / pageSize) || 1, 100));
+    const pages: Record<string, unknown>[] = [first];
+    for (let start = 2; start <= lastPage; start += 2) {
+      const batch = Array.from({ length: Math.min(2, lastPage - start + 1) }, (_, offset) => loadPage(start + offset));
+      pages.push(...await Promise.all(batch));
+    }
+    const entries = pages.flatMap(contactEntries).map(mapCustomer);
+    customerCache = { entries, expiresAt: Date.now() + 5 * 60 * 1000 };
+    return entries;
+  })();
+  try {
+    return await customerCachePromise;
+  } finally {
+    customerCachePromise = null;
+  }
+}
+
+export async function findCustomersByContactDetails(runtime: PlentyEnv, email: string, phone: string): Promise<Customer[]> {
+  const wantedEmail = email.trim().toLocaleLowerCase('de');
+  const wantedPhone = phone.replace(/\D/g, '').replace(/^00/, '').replace(/^0/, '49');
+  if (!wantedEmail && !wantedPhone) return [];
+  const catalog = await loadCustomerCatalog(runtime);
+  return catalog.filter((customer) => {
+    const customerEmail = customer.email.trim().toLocaleLowerCase('de');
+    const customerPhone = customer.phone.replace(/\D/g, '').replace(/^00/, '').replace(/^0/, '49');
+    return Boolean((wantedEmail && customerEmail === wantedEmail) || (wantedPhone && customerPhone === wantedPhone));
+  });
 }
 
 function normalize(value: string) {
