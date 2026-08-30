@@ -90,7 +90,6 @@
 			buildConfigurationList = 900000000000000000000002 /* Build configuration list for PBXNativeTarget "MifrroArbeitsnachweis" */;
 			buildPhases = (
 				700000000000000000000001 /* Sources */,
-				B00000000000000000000001 /* App-Symbol vorbereiten */,
 				300000000000000000000001 /* Frameworks */,
 				800000000000000000000001 /* Resources */,
 			);
@@ -147,29 +146,6 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXResourcesBuildPhase section */
-
-/* Begin PBXShellScriptBuildPhase section */
-		B00000000000000000000001 /* App-Symbol vorbereiten */ = {
-			isa = PBXShellScriptBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			inputFileListPaths = (
-			);
-			inputPaths = (
-				"$(SRCROOT)/../../public/icon-512.png",
-			);
-			name = "App-Symbol vorbereiten";
-			outputFileListPaths = (
-			);
-			outputPaths = (
-				"$(SRCROOT)/MifrroArbeitsnachweis/Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png",
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-			shellPath = /bin/sh;
-			shellScript = "set -e\n/usr/bin/sips -z 1024 1024 \"$SRCROOT/../../public/icon-512.png\" --out \"$SRCROOT/MifrroArbeitsnachweis/Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png\" >/dev/null\n";
-		};
-/* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		700000000000000000000001 /* Sources */ = {
