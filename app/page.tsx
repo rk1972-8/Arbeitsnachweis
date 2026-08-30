@@ -4,9 +4,10 @@ import { getStaffUser, listActiveStaff } from './staff-auth';
 
 export const dynamic = 'force-dynamic';
 
-export default async function Home() {
+export default async function Home({ searchParams }: { searchParams: Promise<{ mode?: string; employee?: string }> }) {
+  const parameters = await searchParams;
   const user = await getStaffUser();
-  if (!user) return <StaffLogin />;
+  if (!user) return <StaffLogin initialMode={parameters.mode === 'admin' ? 'admin' : 'employee'} initialName={parameters.employee?.slice(0, 100) ?? ''} />;
   const personnelOptions = await listActiveStaff();
   if (user.role === 'admin' && !personnelOptions.some((item) => item.name === user.displayName)) {
     personnelOptions.unshift({ id: 'admin', name: user.displayName, role: user.jobRole });
