@@ -6,6 +6,6 @@ export const dynamic = 'force-dynamic';
 
 export default async function CrmPage() {
   const user = await getStaffUser();
-  if (user?.role !== 'admin') redirect('/');
+  if (user?.role !== 'admin') redirect('/?mode=admin&next=%2Fadmin%2Fcrm');
   return <CrmPanel adminName={user.displayName} />;
 }
