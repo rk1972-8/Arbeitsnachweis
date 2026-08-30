@@ -105,5 +105,71 @@ export const plentyOrderDrafts = sqliteTable(
   (table) => [index('idx_plenty_order_drafts_status_updated').on(table.status, table.updatedAt)],
 );
 
+export const crmLeads = sqliteTable(
+  'crm_leads',
+  {
+    id: text('id').primaryKey(),
+    source: text('source').notNull().default('Manuell'),
+    sourceReference: text('source_reference'),
+    incomingAt: text('incoming_at').notNull(),
+    status: text('status').notNull().default('Neu'),
+    priority: text('priority').notNull().default('Normal'),
+    tagsJson: text('tags_json').notNull().default('[]'),
+    internalNotes: text('internal_notes').notNull().default(''),
+    appointmentAt: text('appointment_at'),
+    assignee: text('assignee').notNull().default(''),
+    firstName: text('first_name').notNull().default(''),
+    lastName: text('last_name').notNull().default(''),
+    company: text('company').notNull().default(''),
+    phone: text('phone').notNull().default(''),
+    phoneNormalized: text('phone_normalized').notNull().default(''),
+    email: text('email').notNull().default(''),
+    emailNormalized: text('email_normalized').notNull().default(''),
+    nameNormalized: text('name_normalized').notNull().default(''),
+    street: text('street').notNull().default(''),
+    houseNumber: text('house_number').notNull().default(''),
+    zip: text('zip').notNull().default(''),
+    city: text('city').notNull().default(''),
+    interest: text('interest').notNull().default(''),
+    manufacturer: text('manufacturer').notNull().default(''),
+    rooms: text('rooms').notNull().default(''),
+    area: text('area').notNull().default(''),
+    summary: text('summary').notNull().default(''),
+    contactCount: integer('contact_count').notNull().default(1),
+    lastContactAt: text('last_contact_at').notNull(),
+    googleContactId: text('google_contact_id'),
+    googleExportedAt: text('google_exported_at'),
+    googleExportError: text('google_export_error'),
+    plentyContactId: text('plenty_contact_id'),
+    plentyAddressId: text('plenty_address_id'),
+    plentyExportedAt: text('plenty_exported_at'),
+    plentyExportError: text('plenty_export_error'),
+    createdBy: text('created_by').notNull(),
+    createdAt: text('created_at').notNull(),
+    updatedAt: text('updated_at').notNull(),
+  },
+  (table) => [
+    index('idx_crm_leads_status_contact').on(table.status, table.lastContactAt),
+    index('idx_crm_leads_phone').on(table.phoneNormalized),
+    index('idx_crm_leads_email').on(table.emailNormalized),
+    index('idx_crm_leads_name').on(table.nameNormalized),
+    index('idx_crm_leads_assignee').on(table.assignee),
+  ],
+);
+
+export const crmLeadEvents = sqliteTable(
+  'crm_lead_events',
+  {
+    id: text('id').primaryKey(),
+    leadId: text('lead_id').notNull(),
+    occurredAt: text('occurred_at').notNull(),
+    channel: text('channel').notNull().default('Notiz'),
+    note: text('note').notNull(),
+    createdBy: text('created_by').notNull(),
+    createdAt: text('created_at').notNull(),
+  },
+  (table) => [index('idx_crm_lead_events_lead_time').on(table.leadId, table.occurredAt)],
+);
+
 export type WorkReportRow = typeof workReports.$inferSelect;
 export type NewWorkReportRow = typeof workReports.$inferInsert;
