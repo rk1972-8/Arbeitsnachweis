@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import Link from 'next/link';
 import type { ArticleMatch } from '../../../../lib/types';
 import { ArticleSearch } from '../../../article-search';
 
@@ -71,7 +72,7 @@ export function ReportReview({ reportId }: { reportId: string }) {
   }
 
   if (!report) return <main className="admin-shell"><section className="admin-content">{error ? <div className="alert error-alert">{error}</div> : <p>Arbeitsnachweis wird geladen …</p>}</section></main>;
-  return <main className="admin-shell"><header className="admin-topbar"><div className="brand-lockup"><span className="brand-mark">M</span><div><p className="brand-name">{report.report_number}</p><p className="brand-product">Prüfung vor Kundenversand</p></div></div><div className="admin-nav"><a href="/admin">← Verwaltung</a></div></header>
+  return <main className="admin-shell"><header className="admin-topbar"><Link aria-label="Zur Startseite" className="brand-lockup brand-home-link" href="/"><span className="brand-mark">M</span><div><p className="brand-name">{report.report_number}</p><p className="brand-product">Prüfung vor Kundenversand</p></div></Link><div className="admin-nav"><a href="/admin">← Verwaltung</a></div></header>
     <section className="review-layout"><div className="review-sidebar"><span className="status-pill">{report.status === 'sent' ? 'Versendet' : 'Zu prüfen'}</span><h1>{report.customer_company || report.customer_name}</h1><p>{report.customer_name}<br/>{report.customer_address}</p><dl><div><dt>Mitarbeiter</dt><dd>{report.employee_name}</dd></div><div><dt>Einsatzdatum</dt><dd>{new Date(`${report.work_date}T12:00:00`).toLocaleDateString('de-DE')}</dd></div></dl>
       <a className={`create-order-link${report.order_status === 'created' ? ' created' : ''}`} href={`/admin/reports/${reportId}/order`}>{report.order_status === 'created' ? `Plenty-Auftrag ${report.plenty_order_id || ''} ansehen →` : report.order_status === 'draft' ? 'Auftragsentwurf weiterbearbeiten →' : 'Auftrag anlegen →'}</a>
       <div className="integrity-note"><strong>Unterschrift bleibt geschützt</strong><p>Der unterschriebene Originalnachweis wird nicht verändert. Ergänzungen erscheinen ausschließlich auf der gesonderten Nachtragsseite.</p></div>
