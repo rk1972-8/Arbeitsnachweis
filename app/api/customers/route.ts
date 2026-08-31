@@ -1,16 +1,28 @@
 import { env } from 'cloudflare:workers';
 import { NextResponse } from 'next/server';
-import { createCustomer, searchCustomers } from '../../../lib/plenty';
+import { createCustomer, searchCustomers, searchCustomersAdvanced } from '../../../lib/plenty';
 import type { NewCustomerInput } from '../../../lib/types';
 import { getStaffUser } from '../../staff-auth';
 
 export async function GET(request: Request) {
   if (!await getStaffUser()) return NextResponse.json({ error: 'Bitte zuerst anmelden.' }, { status: 401 });
-  const query = new URL(request.url).searchParams.get('q')?.trim() ?? '';
-  if (query.length < 2) return NextResponse.json({ customers: [] });
+  const parameters = new URL(request.url).searchParams;
+  const query = parameters.get('q')?.trim() ?? '';
+  const advanced = parameters.get('advanced') === '1';
+  if (!advanced && query.length < 2) return NextResponse.json({ customers: [] });
 
   try {
-    const customers = await searchCustomers(env, query);
+    const customers = advanced
+      ? await searchCustomersAdvanced(env, {
+        number: parameters.get('number') ?? '',
+        company: parameters.get('company') ?? '',
+        contact: parameters.get('contact') ?? '',
+        email: parameters.get('email') ?? '',
+        phone: parameters.get('phone') ?? '',
+        zip: parameters.get('zip') ?? '',
+        city: parameters.get('city') ?? '',
+      })
+      : await searchCustomers(env, query);
     return NextResponse.json({ customers });
   } catch (error) {
     return NextResponse.json(
