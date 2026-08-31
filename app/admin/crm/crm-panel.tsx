@@ -187,7 +187,7 @@ export function CrmPanel({ adminName }: { adminName: string }) {
   }
 
   return <main className="admin-shell crm-shell">
-    <header className="admin-topbar"><div className="brand-lockup"><span className="brand-mark">M</span><div><p className="brand-name">mifrro</p><p className="brand-product">CRM & Leads</p></div></div><div className="admin-nav"><Link href="/admin">← Verwaltung</Link><Link href="/">Arbeitsnachweis</Link></div></header>
+    <header className="admin-topbar"><Link aria-label="Zur Startseite" className="brand-lockup brand-home-link" href="/"><span className="brand-mark">M</span><div><p className="brand-name">mifrro</p><p className="brand-product">CRM & Leads</p></div></Link><div className="admin-nav"><Link href="/admin">← Verwaltung</Link><Link href="/arbeitsnachweis">Arbeitsnachweis</Link></div></header>
     <section className="crm-content">
       <div className="crm-heading"><div><span className="eyebrow">Angemeldet als {adminName}</span><h1>CRM & Leads</h1><p>Anfragen, Kontakte und die Übergabe an Plenty zentral verwalten.</p></div><div className="crm-heading-actions"><button className="secondary-button" disabled={busy === 'reconcile'} onClick={() => void reconcileUnknownLeads()} type="button">{busy === 'reconcile' ? 'Prüfe Plenty …' : 'Unbenannte abgleichen'}</button><button className="primary-button" onClick={() => setShowNew((value) => !value)} type="button">{showNew ? 'Schließen' : '+ Neuer Lead'}</button></div></div>
       {notice ? <div className="alert success-alert">{notice}</div> : null}
