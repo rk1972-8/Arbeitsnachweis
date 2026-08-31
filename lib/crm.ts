@@ -45,6 +45,7 @@ export type CrmLead = {
   google_exported_at: string | null;
   google_export_error: string | null;
   plenty_contact_id: string | null;
+  plenty_customer_number: string | null;
   plenty_address_id: string | null;
   plenty_exported_at: string | null;
   plenty_export_error: string | null;
