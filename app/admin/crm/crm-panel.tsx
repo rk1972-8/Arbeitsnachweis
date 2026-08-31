@@ -7,6 +7,15 @@ import type { Customer } from '../../../lib/types';
 import { CrmLeadCapture } from './crm-lead-capture';
 
 type LeadResponse = { lead?: CrmLead; events?: CrmLeadEvent[]; error?: string };
+type GoogleSyncState = {
+  last_succeeded_at: string | null;
+  last_error: string;
+  received: number;
+  created: number;
+  merged: number;
+  initialized: number;
+  skipped: number;
+};
 type NewLead = Record<'source' | 'first_name' | 'last_name' | 'company' | 'phone' | 'email' | 'street' | 'house_number' | 'zip' | 'city' | 'interest' | 'manufacturer' | 'rooms' | 'area' | 'summary', string>;
 
 const emptyLead: NewLead = { source: 'Manuell', first_name: '', last_name: '', company: '', phone: '', email: '', street: '', house_number: '', zip: '', city: '', interest: '', manufacturer: '', rooms: '', area: '', summary: '' };
@@ -31,6 +40,7 @@ export function CrmPanel({ adminName }: { adminName: string }) {
   const [leads, setLeads] = useState<CrmLead[]>([]);
   const [counts, setCounts] = useState<Record<string, number>>({});
   const [existingCustomerCount, setExistingCustomerCount] = useState(0);
+  const [googleSync, setGoogleSync] = useState<GoogleSyncState | null>(null);
   const [query, setQuery] = useState('');
   const [status, setStatus] = useState('');
   const [onlyExistingCustomers, setOnlyExistingCustomers] = useState(false);
@@ -53,11 +63,12 @@ export function CrmPanel({ adminName }: { adminName: string }) {
     if (status) parameters.set('status', status);
     if (onlyExistingCustomers) parameters.set('linked', '1');
     const response = await fetch(`/api/admin/crm/leads?${parameters}`, { cache: 'no-store' });
-    const payload = await response.json() as { leads?: CrmLead[]; counts?: Record<string, number>; existingCustomerCount?: number; error?: string };
+    const payload = await response.json() as { leads?: CrmLead[]; counts?: Record<string, number>; existingCustomerCount?: number; googleSync?: GoogleSyncState | null; error?: string };
     if (!response.ok) throw new Error(payload.error || 'Leads konnten nicht geladen werden.');
     setLeads(payload.leads ?? []);
     setCounts(payload.counts ?? {});
     setExistingCustomerCount(payload.existingCustomerCount ?? 0);
+    setGoogleSync(payload.googleSync ?? null);
   }, [onlyExistingCustomers, query, status]);
 
   const openLead = useCallback(async (id: string) => {
@@ -189,6 +200,11 @@ export function CrmPanel({ adminName }: { adminName: string }) {
     <header className="admin-topbar"><a aria-label="Zur Startseite" className="brand-lockup brand-home-link" href="/"><span className="brand-mark">M</span><div><p className="brand-name">mifrro</p><p className="brand-product">CRM & Leads</p></div></a><div className="admin-nav"><a href="/admin">← Verwaltung</a><a href="/arbeitsnachweis">Arbeitsnachweis</a></div></header>
     <section className="crm-content">
       <div className="crm-heading"><div><span className="eyebrow">Angemeldet als {adminName}</span><h1>CRM & Leads</h1><p>Anfragen, Kontakte und die Übergabe an Plenty zentral verwalten.</p></div><div className="crm-heading-actions"><button className="secondary-button" disabled={busy === 'reconcile'} onClick={() => void reconcileUnknownLeads()} type="button">{busy === 'reconcile' ? 'Prüfe Plenty …' : 'Unbenannte abgleichen'}</button><button className="primary-button" onClick={() => setShowNew((value) => !value)} type="button">{showNew ? 'Schließen' : '+ Neuer Lead'}</button></div></div>
+      <div className={`crm-sync-banner ${googleSync?.last_error ? 'sync-error' : ''}`}>
+        <span aria-hidden="true" />
+        <div><strong>Google-Eingang</strong><small>{googleSync?.last_succeeded_at ? `Automatisch abgeglichen · zuletzt ${dateTime(googleSync.last_succeeded_at)}` : 'Automatische Verbindung wird eingerichtet'}</small></div>
+        {googleSync?.last_error ? <b>Letzter Fehler</b> : <b>{googleSync?.created ? `${googleSync.created} neu` : 'Aktuell'}</b>}
+      </div>
       {notice ? <div className="alert success-alert">{notice}</div> : null}
       {error ? <div className="alert error-alert">{error}</div> : null}
       {showNew ? <form className="crm-new-card" onSubmit={createLead}>
