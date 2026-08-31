@@ -28,7 +28,7 @@ export function StaffLogin({
       if (!response.ok || !payload.authenticated) throw new Error(payload.error || 'Anmeldung fehlgeschlagen.');
       const requestedPage = new URLSearchParams(window.location.search).get('next');
       const safeRequestedPage = requestedPage?.startsWith('/') && !requestedPage.startsWith('//') ? requestedPage : '';
-      window.location.href = safeRequestedPage || (mode === 'admin' ? '/admin' : '/');
+      window.location.href = safeRequestedPage || '/';
     } catch (loginError) {
       setError(loginError instanceof Error ? loginError.message : 'Anmeldung fehlgeschlagen.');
     } finally { setBusy(false); }
