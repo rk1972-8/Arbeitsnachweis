@@ -31,8 +31,10 @@ function dateTimeInput(value: string | null) {
 export function CrmPanel({ adminName }: { adminName: string }) {
   const [leads, setLeads] = useState<CrmLead[]>([]);
   const [counts, setCounts] = useState<Record<string, number>>({});
+  const [existingCustomerCount, setExistingCustomerCount] = useState(0);
   const [query, setQuery] = useState('');
   const [status, setStatus] = useState('');
+  const [onlyExistingCustomers, setOnlyExistingCustomers] = useState(false);
   const [selected, setSelected] = useState<CrmLead | null>(null);
   const [events, setEvents] = useState<CrmLeadEvent[]>([]);
   const [newLead, setNewLead] = useState<NewLead>(emptyLead);
@@ -50,12 +52,14 @@ export function CrmPanel({ adminName }: { adminName: string }) {
     const parameters = new URLSearchParams();
     if (query.trim()) parameters.set('q', query.trim());
     if (status) parameters.set('status', status);
+    if (onlyExistingCustomers) parameters.set('linked', '1');
     const response = await fetch(`/api/admin/crm/leads?${parameters}`, { cache: 'no-store' });
-    const payload = await response.json() as { leads?: CrmLead[]; counts?: Record<string, number>; error?: string };
+    const payload = await response.json() as { leads?: CrmLead[]; counts?: Record<string, number>; existingCustomerCount?: number; error?: string };
     if (!response.ok) throw new Error(payload.error || 'Leads konnten nicht geladen werden.');
     setLeads(payload.leads ?? []);
     setCounts(payload.counts ?? {});
-  }, [query, status]);
+    setExistingCustomerCount(payload.existingCustomerCount ?? 0);
+  }, [onlyExistingCustomers, query, status]);
 
   const openLead = useCallback(async (id: string) => {
     setBusy('detail'); setError(''); setDuplicates([]);
@@ -211,7 +215,7 @@ export function CrmPanel({ adminName }: { adminName: string }) {
         </div>
         <button className="primary-button" disabled={busy === 'create'} type="submit">{busy === 'create' ? 'Speichere …' : 'Geprüften Lead anlegen'}</button>
       </form> : null}
-      <div className="crm-filters"><input aria-label="Leads durchsuchen" placeholder="Name, Firma, Telefon, E-Mail, Ort oder Anliegen suchen …" value={query} onChange={(event) => setQuery(event.target.value)} /><div className="crm-statuses"><button className={!status ? 'active' : ''} onClick={() => setStatus('')} type="button">Alle <b>{Object.entries(counts).filter(([name]) => name !== 'Gelöscht').reduce((sum, [, count]) => sum + count, 0)}</b></button>{visibleStatuses.map((item) => <button className={status === item ? 'active' : ''} key={item} onClick={() => setStatus(item)} type="button">{item} <b>{counts[item] ?? 0}</b></button>)}</div></div>
+      <div className="crm-filters"><input aria-label="Leads durchsuchen" placeholder="Name, Firma, Telefon, E-Mail, Ort oder Anliegen suchen …" value={query} onChange={(event) => setQuery(event.target.value)} /><div className="crm-statuses"><button className={!status && !onlyExistingCustomers ? 'active' : ''} onClick={() => { setStatus(''); setOnlyExistingCustomers(false); }} type="button">Alle <b>{Object.entries(counts).filter(([name]) => name !== 'Gelöscht').reduce((sum, [, count]) => sum + count, 0)}</b></button><button className={onlyExistingCustomers ? 'active' : ''} onClick={() => { setStatus(''); setOnlyExistingCustomers(true); }} type="button">Bestandskunden <b>{existingCustomerCount}</b></button>{visibleStatuses.map((item) => <button className={status === item && !onlyExistingCustomers ? 'active' : ''} key={item} onClick={() => { setStatus(item); setOnlyExistingCustomers(false); }} type="button">{item} <b>{counts[item] ?? 0}</b></button>)}</div></div>
       <div className="crm-workspace">
         <aside className="crm-lead-list" ref={leadListRef}>{leads.length ? leads.map((lead) => <button className={selected?.id === lead.id ? 'selected' : ''} key={lead.id} onClick={() => void openLead(lead.id)} type="button"><div><span className={`crm-priority priority-${lead.priority.toLowerCase()}`}>{lead.priority}</span>{lead.plenty_contact_id ? <span className="crm-existing-customer">Bestandskunde{lead.plenty_customer_number ? ` · Nr. ${lead.plenty_customer_number}` : ''}</span> : null}<strong>{displayName(lead)}</strong><small>{[lead.first_name, lead.last_name].filter(Boolean).join(' ')}{lead.city ? ` · ${lead.city}` : ''}</small></div><div><span>{lead.status}</span><small>{dateTime(lead.last_contact_at)}</small></div></button>) : <div className="empty-state"><strong>Keine Leads gefunden</strong><p>Lege einen neuen Lead an oder ändere den Filter.</p></div>}</aside>
         <section className="crm-detail" ref={detailRef}>{selected ? <><button className="crm-list-back" onClick={() => leadListRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })} type="button">← Andere Leads</button><div className="crm-detail-head"><div><span className="card-kicker">Kontaktakte</span>{selected.plenty_contact_id ? <div className="crm-customer-number"><span>Bestandskunde</span><strong>{selected.plenty_customer_number ? `Kundennummer ${selected.plenty_customer_number}` : `Plenty-Kontakt ${selected.plenty_contact_id}`}</strong></div> : null}<h2>{displayName(selected)}</h2><p>{selected.contact_count} Kontakt{selected.contact_count === 1 ? '' : 'e'} · zuletzt {dateTime(selected.last_contact_at)}</p></div><div className="crm-quick-actions">{selected.phone ? <a href={`tel:${selected.phone}`}>Anrufen</a> : null}{selected.phone ? <a href={whatsappUrl(selected.phone)} rel="noreferrer" target="_blank">WhatsApp</a> : null}{selected.email ? <a href={`mailto:${selected.email}`}>E-Mail</a> : null}</div></div>
