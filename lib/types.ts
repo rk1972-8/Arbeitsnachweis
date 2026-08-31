@@ -56,9 +56,16 @@ export type ArticleMatch = {
   variationName: string;
   model: string;
   isActive: boolean;
+  manufacturerId?: string;
+  manufacturer?: string;
   priceGross?: number;
   currency?: string;
   salesPriceId?: string;
+};
+
+export type ArticleManufacturer = {
+  id: string;
+  name: string;
 };
 
 export type OrderAddress = {
