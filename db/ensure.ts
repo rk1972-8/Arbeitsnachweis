@@ -145,6 +145,24 @@ export async function ensureDatabase() {
       created_at TEXT NOT NULL
     )`),
     env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_crm_lead_events_lead_time ON crm_lead_events(lead_id, occurred_at)'),
+    env.DB.prepare(`CREATE TABLE IF NOT EXISTS crm_sync_items (
+      source_key TEXT PRIMARY KEY NOT NULL,
+      payload_hash TEXT NOT NULL,
+      lead_id TEXT NOT NULL,
+      synced_at TEXT NOT NULL
+    )`),
+    env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_crm_sync_items_lead ON crm_sync_items(lead_id)'),
+    env.DB.prepare(`CREATE TABLE IF NOT EXISTS crm_sync_state (
+      id TEXT PRIMARY KEY NOT NULL,
+      last_started_at TEXT,
+      last_succeeded_at TEXT,
+      last_error TEXT DEFAULT '' NOT NULL,
+      received INTEGER DEFAULT 0 NOT NULL,
+      created INTEGER DEFAULT 0 NOT NULL,
+      merged INTEGER DEFAULT 0 NOT NULL,
+      initialized INTEGER DEFAULT 0 NOT NULL,
+      skipped INTEGER DEFAULT 0 NOT NULL
+    )`),
     env.DB.prepare('PRAGMA optimize'),
   ]);
   const crmColumns = await env.DB.prepare('PRAGMA table_info(crm_leads)').all<{ name: string }>();
