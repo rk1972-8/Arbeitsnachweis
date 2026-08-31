@@ -2,7 +2,7 @@ import { env } from 'cloudflare:workers';
 import { NextResponse } from 'next/server';
 import { ensureDatabase } from '../../../../../db/ensure';
 import { normalizeLeadName, normalizePhone, type CrmLeadRow } from '../../../../../lib/crm';
-import { findCustomersByContactDetails } from '../../../../../lib/plenty';
+import { findCustomersByContactDetails, getCustomer } from '../../../../../lib/plenty';
 import type { Customer } from '../../../../../lib/types';
 import { getStaffUser } from '../../../../staff-auth';
 
@@ -33,19 +33,51 @@ export async function POST(request: Request) {
   await ensureDatabase();
 
   try {
-    const body = await request.json().catch(() => ({})) as { apply?: boolean };
+    const body = await request.json().catch(() => ({})) as { apply?: boolean; onlyCustomerNumbers?: boolean };
     const apply = body.apply === true;
-    const rows = await env.DB.prepare(`SELECT * FROM crm_leads
-      WHERE company = '' AND first_name = '' AND last_name = '' AND (
-        status <> 'Gelöscht' OR EXISTS (
-          SELECT 1 FROM crm_lead_events event
-          WHERE event.lead_id = crm_leads.id AND event.channel = 'Plenty'
-            AND event.note = 'Kein Plenty-Kontakt über E-Mail oder Telefonnummer gefunden; aus der aktiven Liste ausgeblendet.'
+    let leads: CrmLeadRow[] = [];
+    if (!body.onlyCustomerNumbers) {
+      const rows = await env.DB.prepare(`SELECT * FROM crm_leads
+        WHERE company = '' AND first_name = '' AND last_name = '' AND (
+          status <> 'Gelöscht' OR EXISTS (
+            SELECT 1 FROM crm_lead_events event
+            WHERE event.lead_id = crm_leads.id AND event.channel = 'Plenty'
+              AND event.note = 'Kein Plenty-Kontakt über E-Mail oder Telefonnummer gefunden; aus der aktiven Liste ausgeblendet.'
+          )
         )
-      )
-      ORDER BY last_contact_at DESC LIMIT 500`).all<CrmLeadRow>();
-    const leads = rows.results ?? [];
-    const result = { candidates: leads.length, matched: 0, hidden: 0, failed: 0, applied: apply, errors: [] as string[] };
+        ORDER BY last_contact_at DESC LIMIT 500`).all<CrmLeadRow>();
+      leads = rows.results ?? [];
+    }
+    const result = { candidates: leads.length, matched: 0, hidden: 0, existingCustomers: 0, numbersAdded: 0, failed: 0, applied: apply, errors: [] as string[] };
+
+    const linkedRows = await env.DB.prepare(`SELECT id, plenty_contact_id FROM crm_leads
+      WHERE plenty_contact_id IS NOT NULL AND plenty_contact_id <> ''
+        AND (plenty_customer_number IS NULL OR plenty_customer_number = '')
+      LIMIT 500`).all<{ id: string; plenty_contact_id: string }>();
+    const linkedLeads = linkedRows.results ?? [];
+    result.existingCustomers = linkedLeads.length;
+    for (let start = 0; start < linkedLeads.length; start += 4) {
+      const customers = await Promise.all(linkedLeads.slice(start, start + 4).map(async (lead) => {
+        try {
+          return { lead, customer: await getCustomer(env, lead.plenty_contact_id) };
+        } catch (error) {
+          return { lead, customer: null, error: error instanceof Error ? error.message : 'Kundennummer konnte nicht geladen werden.' };
+        }
+      }));
+      for (const entry of customers) {
+        if (entry.error) {
+          result.failed += 1;
+          if (result.errors.length < 10) result.errors.push(entry.error);
+          continue;
+        }
+        if (!entry.customer?.id) continue;
+        result.numbersAdded += 1;
+        if (apply) {
+          await env.DB.prepare('UPDATE crm_leads SET plenty_customer_number = ?, updated_at = ? WHERE id = ?')
+            .bind(entry.customer.number || entry.customer.id, new Date().toISOString(), entry.lead.id).run();
+        }
+      }
+    }
 
     const inspected: Array<{ lead: CrmLeadRow; match: Customer | null; error?: string }> = [];
     for (let start = 0; start < leads.length; start += 4) {
@@ -77,14 +109,14 @@ export async function POST(request: Request) {
               company = ?, first_name = ?, last_name = ?,
               email = ?, email_normalized = ?, phone = ?, phone_normalized = ?, name_normalized = ?,
               street = ?, house_number = ?, zip = ?, city = ?, status = ?,
-              plenty_contact_id = ?, plenty_address_id = COALESCE(?, plenty_address_id), updated_at = ?
+              plenty_contact_id = ?, plenty_customer_number = ?, plenty_address_id = COALESCE(?, plenty_address_id), updated_at = ?
               WHERE id = ?`)
               .bind(
                 match.company, match.firstName, match.lastName,
                 lead.email || match.email, normalizedEmail(lead.email || match.email), lead.phone || match.phone,
                 normalizePhone(lead.phone || match.phone), normalizeLeadName(match.firstName, match.lastName, match.company),
                 lead.street || match.street, lead.house_number || match.houseNumber, lead.zip || match.zip, lead.city || match.city,
-                status, match.id, match.billingAddressId ?? null, now, lead.id,
+                status, match.id, match.number || match.id, match.billingAddressId ?? null, now, lead.id,
               ),
             env.DB.prepare(`INSERT INTO crm_lead_events (id, lead_id, occurred_at, channel, note, created_by, created_at)
               VALUES (?, ?, ?, ?, ?, ?, ?)`)
