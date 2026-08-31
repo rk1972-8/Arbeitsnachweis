@@ -122,6 +122,7 @@ export async function ensureDatabase() {
       google_exported_at TEXT,
       google_export_error TEXT,
       plenty_contact_id TEXT,
+      plenty_customer_number TEXT,
       plenty_address_id TEXT,
       plenty_exported_at TEXT,
       plenty_export_error TEXT,
@@ -146,5 +147,9 @@ export async function ensureDatabase() {
     env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_crm_lead_events_lead_time ON crm_lead_events(lead_id, occurred_at)'),
     env.DB.prepare('PRAGMA optimize'),
   ]);
+  const crmColumns = await env.DB.prepare('PRAGMA table_info(crm_leads)').all<{ name: string }>();
+  if (!(crmColumns.results ?? []).some((column) => column.name === 'plenty_customer_number')) {
+    await env.DB.prepare('ALTER TABLE crm_leads ADD COLUMN plenty_customer_number TEXT').run();
+  }
   initialized = true;
 }
