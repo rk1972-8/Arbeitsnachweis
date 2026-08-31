@@ -13,6 +13,7 @@ type LegacyLead = CrmLeadInput & {
   google_exported_at?: string;
   google_export_error?: string;
   plenty_contact_id?: string;
+  plenty_customer_number?: string;
   plenty_address_id?: string;
   plenty_exported_at?: string;
   plenty_export_error?: string;
@@ -63,12 +64,14 @@ export async function POST(request: Request) {
             contact_count = MAX(contact_count, ?), last_contact_at = MAX(last_contact_at, ?),
             google_contact_id = COALESCE(NULLIF(?, ''), google_contact_id),
             google_exported_at = COALESCE(?, google_exported_at), google_export_error = COALESCE(NULLIF(?, ''), google_export_error),
-            plenty_contact_id = COALESCE(NULLIF(?, ''), plenty_contact_id), plenty_address_id = COALESCE(NULLIF(?, ''), plenty_address_id),
+            plenty_contact_id = COALESCE(NULLIF(?, ''), plenty_contact_id), plenty_customer_number = COALESCE(NULLIF(?, ''), plenty_customer_number),
+            plenty_address_id = COALESCE(NULLIF(?, ''), plenty_address_id),
             plenty_exported_at = COALESCE(?, plenty_exported_at), plenty_export_error = COALESCE(NULLIF(?, ''), plenty_export_error),
             updated_at = ? WHERE id = ?`)
             .bind(
               contactCount, lastContactAt, text(lead.google_contact_id, 250), isoDate(lead.google_exported_at), text(lead.google_export_error, 1_000),
-              text(lead.plenty_contact_id, 250), text(lead.plenty_address_id, 250), isoDate(lead.plenty_exported_at), text(lead.plenty_export_error, 1_000),
+              text(lead.plenty_contact_id, 250), text(lead.plenty_customer_number, 250), text(lead.plenty_address_id, 250),
+              isoDate(lead.plenty_exported_at), text(lead.plenty_export_error, 1_000),
               now, imported.lead.id,
             ),
           env.DB.prepare(`INSERT OR IGNORE INTO crm_lead_events (id, lead_id, occurred_at, channel, note, created_by, created_at)
