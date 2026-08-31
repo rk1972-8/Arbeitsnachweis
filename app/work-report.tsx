@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import Link from 'next/link';
 import type { AnalysisResult, Customer, NewCustomerInput, PersonnelRow, PositionRow, WorkReportDraft } from '../lib/types';
 import { ROUTE_ARTICLES, withAutomaticPositions } from '../lib/automatic-positions';
 import { DEFAULT_PERSONNEL_ROLE, PERSONNEL_ROLES } from '../lib/personnel';
@@ -432,7 +431,7 @@ export function WorkReportApp({ isAdmin, personnelOptions, userInitials, userNam
   return (
     <main className="app-shell">
       <header className="topbar">
-        <Link aria-label="Zur Startseite" className="brand-lockup brand-home-link" href="/"><span className="brand-mark" aria-hidden="true">M</span><div><p className="brand-name">mifrro</p><p className="brand-product">Arbeitsnachweis</p></div></Link>
+        <a aria-label="Zur Startseite" className="brand-lockup brand-home-link" href="/"><span className="brand-mark" aria-hidden="true">M</span><div><p className="brand-name">mifrro</p><p className="brand-product">Arbeitsnachweis</p></div></a>
         <div className="topbar-actions"><span className="sync-state"><i /> {report ? report.reportNumber : 'Entwurf gespeichert'}</span>{isAdmin ? <a className="admin-link" href="/admin">Verwaltung</a> : null}<button className="user-button" onClick={() => void logout()} title={`${userName} – abmelden`} type="button" aria-label={`${userName} abmelden`}>{userInitials}</button></div>
       </header>
 
