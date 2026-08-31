@@ -1,7 +1,6 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import Link from 'next/link';
 import type { ArticleMatch, OrderAddress, PlentyOrderDraft, PlentyOrderPosition } from '../../../../../lib/types';
 import { ArticleSearch } from '../../../../article-search';
 
@@ -103,11 +102,11 @@ export function OrderEditor({ reportId }: { reportId: string }) {
     finally { setBusy(''); }
   }
 
-  if (!draft) return <main className="admin-shell"><header className="admin-topbar"><Link aria-label="Zur Startseite" className="brand-lockup brand-home-link" href="/"><span className="brand-mark">M</span><div><p className="brand-name">mifrro</p><p className="brand-product">Plenty-Auftrag</p></div></Link><div className="admin-nav"><a href={`/admin/reports/${reportId}`}>← Arbeitsnachweis</a></div></header><section className="admin-content">{error ? <div className="alert error-alert">{error}</div> : <p>{busy === 'load' ? 'Auftragsentwurf wird vorbereitet …' : 'Auftragsentwurf ist nicht verfügbar.'}</p>}</section></main>;
+  if (!draft) return <main className="admin-shell"><header className="admin-topbar"><a aria-label="Zur Startseite" className="brand-lockup brand-home-link" href="/"><span className="brand-mark">M</span><div><p className="brand-name">mifrro</p><p className="brand-product">Plenty-Auftrag</p></div></a><div className="admin-nav"><a href={`/admin/reports/${reportId}`}>← Arbeitsnachweis</a></div></header><section className="admin-content">{error ? <div className="alert error-alert">{error}</div> : <p>{busy === 'load' ? 'Auftragsentwurf wird vorbereitet …' : 'Auftragsentwurf ist nicht verfügbar.'}</p>}</section></main>;
 
   const locked = draft.status === 'created';
   return <main className="admin-shell">
-    <header className="admin-topbar"><Link aria-label="Zur Startseite" className="brand-lockup brand-home-link" href="/"><span className="brand-mark">M</span><div><p className="brand-name">{draft.reportNumber}</p><p className="brand-product">Auftrag für Plenty vorbereiten</p></div></Link><div className="admin-nav"><a href={`/admin/reports/${reportId}`}>← Arbeitsnachweis</a><a href="/admin">Verwaltung</a></div></header>
+    <header className="admin-topbar"><a aria-label="Zur Startseite" className="brand-lockup brand-home-link" href="/"><span className="brand-mark">M</span><div><p className="brand-name">{draft.reportNumber}</p><p className="brand-product">Auftrag für Plenty vorbereiten</p></div></a><div className="admin-nav"><a href={`/admin/reports/${reportId}`}>← Arbeitsnachweis</a><a href="/admin">Verwaltung</a></div></header>
     <section className="order-editor-shell">
       <div className="order-editor-heading"><div><span className="eyebrow">Getrennt von der unterschriebenen PDF</span><h1>Auftrag anlegen</h1><p>Adresse, Artikel, Preise und Reihenfolge prüfen. Erst die letzte Schaltfläche übergibt den Auftrag an Plenty.</p></div><div className="order-total"><span>Bruttosumme</span><strong>{money(total)}</strong><small>{draft.positions.length} Positionen</small></div></div>
       {error ? <div className="alert error-alert">{error}</div> : null}
