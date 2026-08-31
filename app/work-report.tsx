@@ -1,12 +1,15 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import Link from 'next/link';
 import type { AnalysisResult, Customer, NewCustomerInput, PersonnelRow, PositionRow, WorkReportDraft } from '../lib/types';
 import { ROUTE_ARTICLES, withAutomaticPositions } from '../lib/automatic-positions';
 import { DEFAULT_PERSONNEL_ROLE, PERSONNEL_ROLES } from '../lib/personnel';
 import { MIFRRO_ORIGIN_ADDRESS } from '../lib/routing';
 import { buildWorkReportEmailBody, reportSenderName } from '../lib/email';
+import type { CrmContactExtraction } from '../lib/crm-contact-extraction';
 import { ArticleSearch } from './article-search';
+import { ContactCapture } from './contact-capture';
 import { SignaturePad } from './signature-pad';
 
 const demoCustomers: Customer[] = [
@@ -24,6 +27,8 @@ const steps = [
 
 const blankCustomer: Customer = { id: '', number: '', company: '', firstName: '', lastName: '', fullName: '', email: '', phone: '', street: '', houseNumber: '', zip: '', city: '' };
 const blankNewCustomer: NewCustomerInput = { company: '', firstName: '', lastName: '', email: '', phone: '', street: '', houseNumber: '', zip: '', city: '' };
+type CustomerSearchFilters = Record<'number' | 'company' | 'contact' | 'email' | 'phone' | 'zip' | 'city', string>;
+const blankCustomerSearch: CustomerSearchFilters = { number: '', company: '', contact: '', email: '', phone: '', zip: '', city: '' };
 
 function customerAddress(customer: Customer) {
   return `${customer.street} ${customer.houseNumber}, ${customer.zip} ${customer.city}`.replace(/\s+,/g, ',').trim();
@@ -83,6 +88,9 @@ export function WorkReportApp({ isAdmin, personnelOptions, userInitials, userNam
   const [showNewCustomer, setShowNewCustomer] = useState(false);
   const [newCustomer, setNewCustomer] = useState<NewCustomerInput>(blankNewCustomer);
   const [duplicates, setDuplicates] = useState<Customer[]>([]);
+  const [customersSearched, setCustomersSearched] = useState(false);
+  const [showAdvancedCustomerSearch, setShowAdvancedCustomerSearch] = useState(false);
+  const [customerFilters, setCustomerFilters] = useState<CustomerSearchFilters>(blankCustomerSearch);
   const reportCreationInFlight = useRef(false);
 
   useEffect(() => {
@@ -127,21 +135,42 @@ export function WorkReportApp({ isAdmin, personnelOptions, userInitials, userNam
     setDraft((current) => ({ ...current, [key]: value }));
   }
 
-  async function searchCustomers() {
+  async function searchCustomers(advanced = false) {
     const value = query.trim();
-    if (value.length < 2) { setError('Bitte mindestens zwei Zeichen eingeben.'); return; }
+    if (!advanced && value.length < 2) { setError('Bitte mindestens zwei Zeichen eingeben.'); return; }
+    if (advanced && !Object.values(customerFilters).some((entry) => entry.trim())) { setError('Bitte mindestens ein Feld der erweiterten Suche ausfüllen.'); return; }
     setBusy('customers'); setError(''); setNotice('');
     try {
-      const response = await fetch(`/api/customers?q=${encodeURIComponent(value)}`);
+      const parameters = new URLSearchParams(advanced ? { advanced: '1', ...customerFilters } : { q: value });
+      const response = await fetch(`/api/customers?${parameters}`);
       const payload = await response.json() as { customers?: Customer[]; error?: string };
       if (!response.ok) throw new Error(payload.error || 'Kundensuche fehlgeschlagen.');
       setMatches(payload.customers ?? []);
+      setCustomersSearched(true);
     } catch (searchError) {
       const normalized = value.toLocaleLowerCase('de');
-      setMatches(demoCustomers.filter((customer) => `${customer.company} ${customer.fullName} ${customer.city}`.toLocaleLowerCase('de').includes(normalized)));
-      setNotice('Plenty ist in der lokalen Vorschau noch nicht verbunden. Es werden vorübergehend Beispieldaten angezeigt.');
+      setMatches(advanced ? [] : demoCustomers.filter((customer) => `${customer.company} ${customer.fullName} ${customer.city}`.toLocaleLowerCase('de').includes(normalized)));
+      setCustomersSearched(true);
       setError(searchError instanceof Error ? searchError.message : 'Kundensuche fehlgeschlagen.');
     } finally { setBusy(''); }
+  }
+
+  function applyCustomerExtraction(result: CrmContactExtraction) {
+    setNewCustomer((current) => ({
+      company: result.company || current.company,
+      firstName: result.first_name || current.firstName,
+      lastName: result.last_name || current.lastName,
+      email: result.email || current.email,
+      phone: result.phone || current.phone,
+      street: result.street || current.street,
+      houseNumber: result.house_number || current.houseNumber,
+      zip: result.zip || current.zip,
+      city: result.city || current.city,
+    }));
+    setNotice(result.review_notes.length
+      ? `Kundendaten wurden übernommen. Bitte prüfen: ${result.review_notes.join(' · ')}`
+      : 'Kundendaten wurden übernommen. Bitte vor der Anlage kurz prüfen.');
+    setError('');
   }
 
   function chooseCustomer(customer: Customer) {
@@ -403,7 +432,7 @@ export function WorkReportApp({ isAdmin, personnelOptions, userInitials, userNam
   return (
     <main className="app-shell">
       <header className="topbar">
-        <div className="brand-lockup"><span className="brand-mark" aria-hidden="true">M</span><div><p className="brand-name">mifrro</p><p className="brand-product">Arbeitsnachweis</p></div></div>
+        <Link aria-label="Zur Startseite" className="brand-lockup brand-home-link" href="/"><span className="brand-mark" aria-hidden="true">M</span><div><p className="brand-name">mifrro</p><p className="brand-product">Arbeitsnachweis</p></div></Link>
         <div className="topbar-actions"><span className="sync-state"><i /> {report ? report.reportNumber : 'Entwurf gespeichert'}</span>{isAdmin ? <a className="admin-link" href="/admin">Verwaltung</a> : null}<button className="user-button" onClick={() => void logout()} title={`${userName} – abmelden`} type="button" aria-label={`${userName} abmelden`}>{userInitials}</button></div>
       </header>
 
@@ -423,9 +452,21 @@ export function WorkReportApp({ isAdmin, personnelOptions, userInitials, userNam
           {notice ? <div className="alert success-alert">{notice}</div> : null}
 
           {step === 0 ? <>
-            <div className="search-card"><label htmlFor="customer-search">Kundensuche</label><div className="search-row"><div className="search-input-wrap"><span aria-hidden="true" className="search-symbol">⌕</span><input id="customer-search" onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => event.key === 'Enter' && searchCustomers()} placeholder="Firma, Name, Straße oder Ort" type="search" value={query}/>{query ? <button aria-label="Suche leeren" className="clear-search" onClick={() => setQuery('')} type="button">×</button> : null}</div><button className="primary-button" disabled={busy === 'customers'} onClick={searchCustomers} type="button">{busy === 'customers' ? 'Suche …' : 'Kunde prüfen'}</button></div><p className="search-note">Die Kundendaten werden direkt mit Plenty abgeglichen.</p></div>
-            <div className="results-heading"><div><h2>{showNewCustomer ? 'Neukunde' : query ? 'Suchergebnisse' : 'Zuletzt verwendet'}</h2><p>{showNewCustomer ? 'Wird nach Bestätigung in Plenty angelegt' : `${matches.length} ${matches.length === 1 ? 'Kunde' : 'Kunden'}`}</p></div><button className="text-button" onClick={() => { setShowNewCustomer(!showNewCustomer); setDuplicates([]); setError(''); }} type="button">{showNewCustomer ? 'Abbrechen' : '+ Neuen Kunden anlegen'}</button></div>
-            {showNewCustomer ? <div className="form-card new-customer-card"><div className="form-grid two-col"><Field label="Firma"><input value={newCustomer.company} onChange={(event) => setNewCustomer({ ...newCustomer, company: event.target.value })}/></Field><span/><Field label="Vorname"><input value={newCustomer.firstName} onChange={(event) => setNewCustomer({ ...newCustomer, firstName: event.target.value })}/></Field><Field label="Nachname"><input value={newCustomer.lastName} onChange={(event) => setNewCustomer({ ...newCustomer, lastName: event.target.value })}/></Field><Field label="Straße"><input value={newCustomer.street} onChange={(event) => setNewCustomer({ ...newCustomer, street: event.target.value })}/></Field><Field label="Hausnummer"><input value={newCustomer.houseNumber} onChange={(event) => setNewCustomer({ ...newCustomer, houseNumber: event.target.value })}/></Field><Field label="PLZ"><input value={newCustomer.zip} onChange={(event) => setNewCustomer({ ...newCustomer, zip: event.target.value })}/></Field><Field label="Ort"><input value={newCustomer.city} onChange={(event) => setNewCustomer({ ...newCustomer, city: event.target.value })}/></Field><Field label="E-Mail"><input type="email" value={newCustomer.email} onChange={(event) => setNewCustomer({ ...newCustomer, email: event.target.value })}/></Field><Field label="Telefon"><input value={newCustomer.phone} onChange={(event) => setNewCustomer({ ...newCustomer, phone: event.target.value })}/></Field></div>{duplicates.length ? <div className="duplicate-box"><strong>Mögliche bestehende Kunden</strong>{duplicates.map((customer) => <button key={customer.id} onClick={() => { chooseCustomer(customer); setShowNewCustomer(false); }} type="button">{customer.company || customer.fullName} · {customerAddress(customer)}</button>)}<button className="danger-button" disabled={busy === 'new-customer'} onClick={() => createNewCustomer(true)} type="button">Trotzdem ausdrücklich neu anlegen</button></div> : <button className="primary-button full-button" disabled={busy === 'new-customer'} onClick={() => createNewCustomer(false)} type="button">{busy === 'new-customer' ? 'Wird geprüft …' : 'Dubletten prüfen und Kunden anlegen'}</button>}</div> : <div className="customer-list">{matches.map((customer) => <button className={`customer-card${draft.customer.id === customer.id ? ' selected' : ''}`} key={customer.id} onClick={() => chooseCustomer(customer)} type="button"><span className="customer-avatar">{(customer.company || customer.fullName).slice(0, 1)}</span><span className="customer-main"><strong>{customer.company || customer.fullName}</strong>{customer.company && customer.fullName ? <small>Ansprechpartner: {customer.fullName}</small> : null}<small>{customer.street} {customer.houseNumber}, {customer.zip} {customer.city}</small><span className="customer-contact"><small>Tel.: {customer.phone || 'nicht hinterlegt'}</small><small>E-Mail: {customer.email || 'nicht hinterlegt'}</small></span></span><span className="customer-id">Kunde {customer.number || customer.id}</span><span className="card-arrow" aria-hidden="true">→</span></button>)}</div>}
+            <div className="search-card">
+              <label htmlFor="customer-search">Kundensuche</label>
+              <div className="search-row"><div className="search-input-wrap"><span aria-hidden="true" className="search-symbol">⌕</span><input id="customer-search" onChange={(event) => { setQuery(event.target.value); setCustomersSearched(false); }} onKeyDown={(event) => event.key === 'Enter' && void searchCustomers()} placeholder="Firma, Name, Straße oder Ort" type="search" value={query}/>{query ? <button aria-label="Suche leeren" className="clear-search" onClick={() => { setQuery(''); setCustomersSearched(false); }} type="button">×</button> : null}</div><button className="primary-button" disabled={busy === 'customers'} onClick={() => void searchCustomers()} type="button">{busy === 'customers' ? 'Suche …' : 'Kunde prüfen'}</button></div>
+              <div className="search-card-actions"><p className="search-note">Die Kundendaten werden direkt mit Plenty abgeglichen.</p><button className="text-button" onClick={() => setShowAdvancedCustomerSearch((current) => !current)} type="button">{showAdvancedCustomerSearch ? 'Einfache Suche' : 'Erweiterte Suche'}</button></div>
+              {showAdvancedCustomerSearch ? <div className="advanced-customer-search"><div className="form-grid customer-search-grid"><Field label="Kundennummer"><input value={customerFilters.number} onChange={(event) => setCustomerFilters({ ...customerFilters, number: event.target.value })}/></Field><Field label="Firma"><input value={customerFilters.company} onChange={(event) => setCustomerFilters({ ...customerFilters, company: event.target.value })}/></Field><Field label="Ansprechpartner"><input value={customerFilters.contact} onChange={(event) => setCustomerFilters({ ...customerFilters, contact: event.target.value })}/></Field><Field label="E-Mail"><input type="email" value={customerFilters.email} onChange={(event) => setCustomerFilters({ ...customerFilters, email: event.target.value })}/></Field><Field label="Telefon"><input value={customerFilters.phone} onChange={(event) => setCustomerFilters({ ...customerFilters, phone: event.target.value })}/></Field><Field label="PLZ"><input value={customerFilters.zip} onChange={(event) => setCustomerFilters({ ...customerFilters, zip: event.target.value })}/></Field><Field label="Ort"><input value={customerFilters.city} onChange={(event) => setCustomerFilters({ ...customerFilters, city: event.target.value })}/></Field></div><button className="secondary-button" disabled={busy === 'customers'} onClick={() => void searchCustomers(true)} type="button">Erweitert in Plenty suchen</button></div> : null}
+            </div>
+            <div className="results-heading"><div><h2>{showNewCustomer ? 'Neukunde' : customersSearched ? 'Suchergebnisse' : 'Zuletzt verwendet'}</h2><p>{showNewCustomer ? 'Wird erst nach Bestätigung in Plenty angelegt' : `${matches.length} ${matches.length === 1 ? 'Kunde' : 'Kunden'}`}</p></div><button className="text-button" onClick={() => { setShowNewCustomer(!showNewCustomer); setDuplicates([]); setError(''); }} type="button">{showNewCustomer ? 'Abbrechen' : '+ Neuen Kunden anlegen'}</button></div>
+            {showNewCustomer ? <div className="form-card new-customer-card">
+              <ContactCapture endpoint="/api/customers/extract" onExtract={applyCustomerExtraction} description="Fotografiere zum Beispiel einen Briefkopf oder diktiere die Kontaktdaten. Danach prüfst du alle Felder, bevor der Kunde in Plenty angelegt wird."/>
+              <div className="form-grid two-col"><Field label="Firma"><input value={newCustomer.company} onChange={(event) => setNewCustomer({ ...newCustomer, company: event.target.value })}/></Field><span/><Field label="Vorname"><input value={newCustomer.firstName} onChange={(event) => setNewCustomer({ ...newCustomer, firstName: event.target.value })}/></Field><Field label="Nachname"><input value={newCustomer.lastName} onChange={(event) => setNewCustomer({ ...newCustomer, lastName: event.target.value })}/></Field><Field label="Straße"><input value={newCustomer.street} onChange={(event) => setNewCustomer({ ...newCustomer, street: event.target.value })}/></Field><Field label="Hausnummer"><input value={newCustomer.houseNumber} onChange={(event) => setNewCustomer({ ...newCustomer, houseNumber: event.target.value })}/></Field><Field label="PLZ"><input value={newCustomer.zip} onChange={(event) => setNewCustomer({ ...newCustomer, zip: event.target.value })}/></Field><Field label="Ort"><input value={newCustomer.city} onChange={(event) => setNewCustomer({ ...newCustomer, city: event.target.value })}/></Field><Field label="E-Mail"><input type="email" value={newCustomer.email} onChange={(event) => setNewCustomer({ ...newCustomer, email: event.target.value })}/></Field><Field label="Telefon"><input value={newCustomer.phone} onChange={(event) => setNewCustomer({ ...newCustomer, phone: event.target.value })}/></Field></div>
+              {duplicates.length ? <div className="duplicate-box"><strong>Mögliche bestehende Kunden</strong>{duplicates.map((customer) => <button key={customer.id} onClick={() => { chooseCustomer(customer); setShowNewCustomer(false); }} type="button">{customer.company || customer.fullName} · {customerAddress(customer)}</button>)}<button className="danger-button" disabled={busy === 'new-customer'} onClick={() => createNewCustomer(true)} type="button">Trotzdem ausdrücklich neu anlegen</button></div> : <button className="primary-button full-button" disabled={busy === 'new-customer'} onClick={() => createNewCustomer(false)} type="button">{busy === 'new-customer' ? 'Wird geprüft …' : 'Dubletten prüfen und Kunden anlegen'}</button>}
+            </div> : <div className="customer-list">
+              {customersSearched && !matches.length ? <div className="customer-not-found"><span className="customer-avatar">?</span><div><strong>Kunde ist nicht vorhanden</strong><p>Versuche die erweiterte Plenty-Suche oder erfasse den Kunden direkt per Diktat, Text oder Foto.</p></div><div><button className="secondary-button" onClick={() => setShowAdvancedCustomerSearch(true)} type="button">Erweiterte Suche</button><button className="primary-button" onClick={() => setShowNewCustomer(true)} type="button">Kunden neu anlegen</button></div></div> : null}
+              {matches.map((customer) => <button className={`customer-card${draft.customer.id === customer.id ? ' selected' : ''}`} key={customer.id} onClick={() => chooseCustomer(customer)} type="button"><span className="customer-avatar">{(customer.company || customer.fullName).slice(0, 1)}</span><span className="customer-main"><strong>{customer.company || customer.fullName}</strong>{customer.company && customer.fullName ? <small>Ansprechpartner: {customer.fullName}</small> : null}<small>{customer.street} {customer.houseNumber}, {customer.zip} {customer.city}</small><span className="customer-contact"><small>Tel.: {customer.phone || 'nicht hinterlegt'}</small><small>E-Mail: {customer.email || 'nicht hinterlegt'}</small></span></span><span className="customer-id">Kunde {customer.number || customer.id}</span><span className="card-arrow" aria-hidden="true">→</span></button>)}
+            </div>}
           </> : null}
 
           {step === 1 ? <div className="form-stack">
