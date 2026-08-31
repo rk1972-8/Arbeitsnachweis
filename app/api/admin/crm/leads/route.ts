@@ -16,22 +16,27 @@ export async function GET(request: Request) {
   const query = parameters.get('q')?.trim().slice(0, 120) ?? '';
   const requestedStatus = parameters.get('status')?.trim() ?? '';
   const status = CRM_STATUSES.includes(requestedStatus as (typeof CRM_STATUSES)[number]) ? requestedStatus : '';
+  const linkedToPlenty = parameters.get('linked') === '1';
   const conditions = status ? ['status = ?'] : ["status <> 'Gelöscht'"];
   const bindings: unknown[] = status ? [status] : [];
+  if (linkedToPlenty) conditions.push("plenty_contact_id IS NOT NULL AND plenty_contact_id <> ''");
   if (query) {
     conditions.push(`(company LIKE ? OR first_name LIKE ? OR last_name LIKE ? OR phone LIKE ? OR email LIKE ? OR city LIKE ? OR interest LIKE ? OR summary LIKE ?)`);
     const search = `%${query.replace(/[\\%_]/g, '\\$&')}%`;
     bindings.push(search, search, search, search, search, search, search, search);
   }
-  const [leadRows, countRows] = await Promise.all([
+  const [leadRows, countRows, existingCustomerRow] = await Promise.all([
     env.DB.prepare(`SELECT * FROM crm_leads WHERE ${conditions.join(' AND ')} ORDER BY
       CASE priority WHEN 'Dringend' THEN 0 WHEN 'Hoch' THEN 1 WHEN 'Normal' THEN 2 ELSE 3 END,
       last_contact_at DESC LIMIT 250`).bind(...bindings).all<CrmLeadRow>(),
     env.DB.prepare(`SELECT status, COUNT(*) AS total FROM crm_leads GROUP BY status`).all<{ status: string; total: number }>(),
+    env.DB.prepare(`SELECT COUNT(*) AS total FROM crm_leads
+      WHERE status <> 'Gelöscht' AND plenty_contact_id IS NOT NULL AND plenty_contact_id <> ''`)
+      .first<{ total: number }>(),
   ]);
   const counts = Object.fromEntries((countRows.results ?? []).map((row) => [row.status, Number(row.total)]));
   return NextResponse.json(
-    { leads: (leadRows.results ?? []).map(mapCrmLead), counts },
+    { leads: (leadRows.results ?? []).map(mapCrmLead), counts, existingCustomerCount: Number(existingCustomerRow?.total ?? 0) },
     { headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' } },
   );
 }
