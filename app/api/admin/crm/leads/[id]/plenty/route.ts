@@ -28,9 +28,9 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     }
     if (!customer?.id) throw new Error('Plenty hat keinen Kunden zurückgegeben.');
     const now = new Date().toISOString();
-    await env.DB.prepare(`UPDATE crm_leads SET plenty_contact_id = ?, plenty_address_id = ?, plenty_exported_at = ?,
+    await env.DB.prepare(`UPDATE crm_leads SET plenty_contact_id = ?, plenty_customer_number = ?, plenty_address_id = ?, plenty_exported_at = ?,
       plenty_export_error = NULL, updated_at = ? WHERE id = ?`)
-      .bind(customer.id, customer.billingAddressId ?? null, now, now, id).run();
+      .bind(customer.id, customer.number || customer.id, customer.billingAddressId ?? null, now, now, id).run();
     return NextResponse.json({ customer, exportedAt: now }, { status: 201 });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Übergabe an Plenty fehlgeschlagen.';
