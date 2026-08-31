@@ -25,7 +25,7 @@ export async function GET(request: Request) {
     const search = `%${query.replace(/[\\%_]/g, '\\$&')}%`;
     bindings.push(search, search, search, search, search, search, search, search);
   }
-  const [leadRows, countRows, existingCustomerRow] = await Promise.all([
+  const [leadRows, countRows, existingCustomerRow, syncState] = await Promise.all([
     env.DB.prepare(`SELECT * FROM crm_leads WHERE ${conditions.join(' AND ')} ORDER BY
       CASE priority WHEN 'Dringend' THEN 0 WHEN 'Hoch' THEN 1 WHEN 'Normal' THEN 2 ELSE 3 END,
       last_contact_at DESC LIMIT 250`).bind(...bindings).all<CrmLeadRow>(),
@@ -33,10 +33,25 @@ export async function GET(request: Request) {
     env.DB.prepare(`SELECT COUNT(*) AS total FROM crm_leads
       WHERE status <> 'Gelöscht' AND plenty_contact_id IS NOT NULL AND plenty_contact_id <> ''`)
       .first<{ total: number }>(),
+    env.DB.prepare(`SELECT last_succeeded_at, last_error, received, created, merged, initialized, skipped
+      FROM crm_sync_state WHERE id = 'google'`).first<{
+        last_succeeded_at: string | null;
+        last_error: string;
+        received: number;
+        created: number;
+        merged: number;
+        initialized: number;
+        skipped: number;
+      }>(),
   ]);
   const counts = Object.fromEntries((countRows.results ?? []).map((row) => [row.status, Number(row.total)]));
   return NextResponse.json(
-    { leads: (leadRows.results ?? []).map(mapCrmLead), counts, existingCustomerCount: Number(existingCustomerRow?.total ?? 0) },
+    {
+      leads: (leadRows.results ?? []).map(mapCrmLead),
+      counts,
+      existingCustomerCount: Number(existingCustomerRow?.total ?? 0),
+      googleSync: syncState ?? null,
+    },
     { headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' } },
   );
 }
