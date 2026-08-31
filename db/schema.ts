@@ -172,5 +172,28 @@ export const crmLeadEvents = sqliteTable(
   (table) => [index('idx_crm_lead_events_lead_time').on(table.leadId, table.occurredAt)],
 );
 
+export const crmSyncItems = sqliteTable(
+  'crm_sync_items',
+  {
+    sourceKey: text('source_key').primaryKey(),
+    payloadHash: text('payload_hash').notNull(),
+    leadId: text('lead_id').notNull(),
+    syncedAt: text('synced_at').notNull(),
+  },
+  (table) => [index('idx_crm_sync_items_lead').on(table.leadId)],
+);
+
+export const crmSyncState = sqliteTable('crm_sync_state', {
+  id: text('id').primaryKey(),
+  lastStartedAt: text('last_started_at'),
+  lastSucceededAt: text('last_succeeded_at'),
+  lastError: text('last_error').notNull().default(''),
+  received: integer('received').notNull().default(0),
+  created: integer('created').notNull().default(0),
+  merged: integer('merged').notNull().default(0),
+  initialized: integer('initialized').notNull().default(0),
+  skipped: integer('skipped').notNull().default(0),
+});
+
 export type WorkReportRow = typeof workReports.$inferSelect;
 export type NewWorkReportRow = typeof workReports.$inferInsert;
