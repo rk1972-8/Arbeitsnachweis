@@ -1,7 +1,6 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import Link from 'next/link';
 import { PERSONNEL_ROLES } from '../../lib/personnel';
 
 type Employee = { id: string; name: string; job_role: string; created_at: string };
@@ -116,8 +115,8 @@ export function AdminPanel({ adminName }: { adminName: string }) {
 
   const pendingCount = reports.filter((report) => report.status === 'pending_review').length;
   return <main className="admin-shell">
-    <header className="admin-topbar"><Link aria-label="Zur Startseite" className="brand-lockup brand-home-link" href="/"><span className="brand-mark">M</span><div><p className="brand-name">mifrro</p><p className="brand-product">Administration</p></div></Link><div className="admin-nav"><a href="/admin/crm">CRM & Leads</a><Link href="/">← Zur Startseite</Link><button onClick={logout} type="button">Abmelden</button></div></header>
-    <section className="admin-content"><div className="admin-heading"><div><span className="eyebrow">Angemeldet als {adminName}</span><h1>Verwaltung</h1><p>Mitarbeiterzugänge und eingereichte Arbeitsnachweise zentral verwalten.</p>{reportsLoadedAt ? <small>Zuletzt aktualisiert: {reportsLoadedAt.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</small> : null}</div><div className="admin-heading-actions"><Link className="secondary-button" href="/">← Zur Startseite</Link><button className="secondary-button" disabled={busy === 'refresh'} onClick={() => void refreshReports()} type="button">{busy === 'refresh' ? 'Aktualisiere …' : 'Arbeitsnachweise aktualisieren'}</button></div></div>
+    <header className="admin-topbar"><a aria-label="Zur Startseite" className="brand-lockup brand-home-link" href="/"><span className="brand-mark">M</span><div><p className="brand-name">mifrro</p><p className="brand-product">Administration</p></div></a><div className="admin-nav"><a href="/admin/crm">CRM & Leads</a><a href="/">← Zur Startseite</a><button onClick={logout} type="button">Abmelden</button></div></header>
+    <section className="admin-content"><div className="admin-heading"><div><span className="eyebrow">Angemeldet als {adminName}</span><h1>Verwaltung</h1><p>Mitarbeiterzugänge und eingereichte Arbeitsnachweise zentral verwalten.</p>{reportsLoadedAt ? <small>Zuletzt aktualisiert: {reportsLoadedAt.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</small> : null}</div><div className="admin-heading-actions"><a className="secondary-button" href="/">← Zur Startseite</a><button className="secondary-button" disabled={busy === 'refresh'} onClick={() => void refreshReports()} type="button">{busy === 'refresh' ? 'Aktualisiere …' : 'Arbeitsnachweise aktualisieren'}</button></div></div>
       <a className="crm-entry-card" href="/admin/crm"><span>Neu</span><div><strong>CRM & Leads</strong><small>Anfragen bearbeiten, Kontakte dokumentieren und an Plenty übergeben.</small></div><b>Öffnen →</b></a>
       <div className="admin-tabs"><button className={tab === 'reports' ? 'active' : ''} onClick={() => setTab('reports')} type="button">Arbeitsnachweise {pendingCount ? <b>{pendingCount}</b> : null}</button><button className={tab === 'employees' ? 'active' : ''} onClick={() => setTab('employees')} type="button">Mitarbeiter</button></div>
       {loadError ? <div className="alert error-alert">{loadError}</div> : null}
