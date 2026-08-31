@@ -141,6 +141,7 @@ export const crmLeads = sqliteTable(
     googleExportedAt: text('google_exported_at'),
     googleExportError: text('google_export_error'),
     plentyContactId: text('plenty_contact_id'),
+    plentyCustomerNumber: text('plenty_customer_number'),
     plentyAddressId: text('plenty_address_id'),
     plentyExportedAt: text('plenty_exported_at'),
     plentyExportError: text('plenty_export_error'),
