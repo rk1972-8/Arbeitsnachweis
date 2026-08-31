@@ -1,9 +1,10 @@
-import type { ArticleMatch, Customer, NewCustomerInput, OrderAddress, PlentyOrderPosition } from './types';
+import type { ArticleManufacturer, ArticleMatch, Customer, NewCustomerInput, OrderAddress, PlentyOrderPosition } from './types';
 
 type PlentyEnv = Pick<Cloudflare.Env, 'PLENTY_BASE_URL' | 'PLENTY_USERNAME' | 'PLENTY_PASSWORD'>;
 
 let tokenCache: { token: string; expiresAt: number } | null = null;
 let articleCache: { entries: ArticleMatch[]; expiresAt: number } | null = null;
+let manufacturerCache: { entries: ArticleManufacturer[]; expiresAt: number } | null = null;
 let customerCache: { entries: Customer[]; expiresAt: number } | null = null;
 let customerCachePromise: Promise<Customer[]> | null = null;
 
@@ -216,6 +217,35 @@ export async function findCustomersByContactDetails(runtime: PlentyEnv, email: s
   });
 }
 
+export type AdvancedCustomerSearch = {
+  number?: string;
+  company?: string;
+  contact?: string;
+  email?: string;
+  phone?: string;
+  zip?: string;
+  city?: string;
+};
+
+export async function searchCustomersAdvanced(runtime: PlentyEnv, filters: AdvancedCustomerSearch): Promise<Customer[]> {
+  const wanted = Object.fromEntries(Object.entries(filters).map(([key, value]) => [key, normalize(String(value ?? ''))])) as Record<keyof AdvancedCustomerSearch, string>;
+  if (!Object.values(wanted).some(Boolean)) return [];
+  const wantedPhone = String(filters.phone ?? '').replace(/\D/g, '');
+  const catalog = await loadCustomerCatalog(runtime);
+  return catalog.filter((customer) => {
+    const checks = [
+      !wanted.number || normalize(customer.number || customer.id).includes(wanted.number),
+      !wanted.company || normalize(customer.company).includes(wanted.company),
+      !wanted.contact || normalize(`${customer.firstName} ${customer.lastName} ${customer.fullName}`).includes(wanted.contact),
+      !wanted.email || normalize(customer.email).includes(wanted.email),
+      !wanted.phone || customer.phone.replace(/\D/g, '').includes(wantedPhone),
+      !wanted.zip || normalize(customer.zip).startsWith(wanted.zip),
+      !wanted.city || normalize(customer.city).includes(wanted.city),
+    ];
+    return checks.every(Boolean);
+  }).slice(0, 50);
+}
+
 function normalize(value: string) {
   return value.toLocaleLowerCase('de').replace(/ä/g, 'ae').replace(/ö/g, 'oe').replace(/ü/g, 'ue').replace(/ß/g, 'ss').trim();
 }
@@ -245,6 +275,37 @@ function firstText(...values: unknown[]) {
   return values.map((value) => String(value ?? '').trim()).find(Boolean) ?? '';
 }
 
+function manufacturerEntries(payload: unknown): unknown[] {
+  if (Array.isArray(payload)) return payload;
+  if (!payload || typeof payload !== 'object') return [];
+  const row = payload as Record<string, unknown>;
+  if (Array.isArray(row.entries)) return row.entries;
+  if (Array.isArray(row.data)) return row.data;
+  return [];
+}
+
+async function loadManufacturers(runtime: PlentyEnv): Promise<ArticleManufacturer[]> {
+  if (manufacturerCache && manufacturerCache.expiresAt > Date.now()) return manufacturerCache.entries;
+  try {
+    const baseUrl = required(runtime.PLENTY_BASE_URL, 'PLENTY_BASE_URL').replace(/\/$/, '');
+    const token = await getToken(runtime);
+    const response = await fetch(`${baseUrl}/items/manufacturers?itemsPerPage=500`, {
+      headers: { authorization: `Bearer ${token}`, accept: 'application/json' },
+    });
+    if (!response.ok) return [];
+    const entries = manufacturerEntries(await response.json()).map((entry) => {
+      const row = entry && typeof entry === 'object' ? entry as Record<string, unknown> : {};
+      const id = String(row.id ?? row.manufacturerId ?? '').trim();
+      const name = firstText(row.name, row.externalName, row.backendName, row.legalName);
+      return id && name ? { id, name } : null;
+    }).filter((entry): entry is ArticleManufacturer => Boolean(entry));
+    manufacturerCache = { entries, expiresAt: Date.now() + 30 * 60 * 1000 };
+    return entries;
+  } catch {
+    return [];
+  }
+}
+
 function mapArticle(input: unknown): ArticleMatch | null {
   const variation = input && typeof input === 'object' ? input as Record<string, unknown> : {};
   const item = variation.item && typeof variation.item === 'object' ? variation.item as Record<string, unknown> : {};
@@ -269,13 +330,17 @@ function mapArticle(input: unknown): ArticleMatch | null {
   const selectedPrice = priceRows.find((entry) => entry.preferred && entry.price > 0)
     ?? priceRows.find((entry) => entry.price > 0)
     ?? priceRows[0];
+  const nestedManufacturer = item.manufacturer && typeof item.manufacturer === 'object' ? item.manufacturer as Record<string, unknown> : {};
+  const manufacturerId = String(item.manufacturerId ?? variation.manufacturerId ?? nestedManufacturer.id ?? '').trim();
   return {
     variationId,
     itemId,
     title: firstText(item.name, item.backendName, item.externalName, translatedName(item.texts ?? item.itemTexts ?? variation.itemTexts), variation.name, variation.model),
     variationName: firstText(variation.name, translatedName(variation.names ?? variation.variationNames)),
     model: String(variation.model ?? variation.customNumber ?? variation.number ?? '').trim(),
-    isActive: variation.isActive !== false && Number(variation.isActive) !== 0,
+    isActive: ![false, 0, '0', 'false'].includes(variation.isActive as false | 0 | string),
+    manufacturerId: manufacturerId || undefined,
+    manufacturer: firstText(item.manufacturerName, variation.manufacturerName, nestedManufacturer.name, nestedManufacturer.externalName) || undefined,
     priceGross: selectedPrice?.price,
     currency: selectedPrice?.currency || 'EUR',
     salesPriceId: selectedPrice?.salesPriceId,
@@ -290,7 +355,6 @@ async function loadArticleCatalog(runtime: PlentyEnv): Promise<ArticleMatch[]> {
     const url = new URL(`${baseUrl}/items/variations`);
     url.searchParams.set('page', String(page));
     url.searchParams.set('itemsPerPage', '250');
-    url.searchParams.set('isActive', 'true');
     url.searchParams.set('with', 'item,variationSalesPrices');
     const response = await fetch(url, { headers: { authorization: `Bearer ${token}`, accept: 'application/json' } });
     if (!response.ok) throw new Error(`Plenty-Artikelkatalog konnte nicht geladen werden (HTTP ${response.status}).`);
@@ -304,7 +368,11 @@ async function loadArticleCatalog(runtime: PlentyEnv): Promise<ArticleMatch[]> {
     const batch = Array.from({ length: Math.min(8, lastPage - start + 1) }, (_, offset) => loadPage(start + offset));
     pages.push(...await Promise.all(batch));
   }
-  const entries = pages.flatMap(variationEntries).map(mapArticle).filter((entry): entry is ArticleMatch => Boolean(entry));
+  const manufacturerNames = new Map((await loadManufacturers(runtime)).map((entry) => [entry.id, entry.name]));
+  const entries = pages.flatMap(variationEntries).map(mapArticle).filter((entry): entry is ArticleMatch => Boolean(entry)).map((entry) => ({
+    ...entry,
+    manufacturer: entry.manufacturer || (entry.manufacturerId ? manufacturerNames.get(entry.manufacturerId) : undefined),
+  }));
   articleCache = { entries, expiresAt: Date.now() + 5 * 60 * 1000 };
   return entries;
 }
@@ -339,26 +407,47 @@ async function enrichArticleTitles(runtime: PlentyEnv, entries: ArticleMatch[]) 
   }));
 }
 
-export async function searchArticles(runtime: PlentyEnv, query: string): Promise<ArticleMatch[]> {
+export type ArticleSearchOptions = { status?: 'active' | 'inactive' | 'all'; manufacturer?: string };
+
+function matchesArticleFilters(entry: ArticleMatch, options: ArticleSearchOptions) {
+  if (options.status === 'active' && !entry.isActive) return false;
+  if (options.status === 'inactive' && entry.isActive) return false;
+  const manufacturer = normalize(options.manufacturer ?? '');
+  if (manufacturer && ![entry.manufacturerId, entry.manufacturer].some((value) => normalize(value ?? '') === manufacturer)) return false;
+  return true;
+}
+
+export async function listArticleManufacturers(runtime: PlentyEnv): Promise<ArticleManufacturer[]> {
+  const catalog = await loadArticleCatalog(runtime);
+  const found = new Map<string, string>();
+  for (const entry of catalog) {
+    if (!entry.manufacturerId && !entry.manufacturer) continue;
+    const id = entry.manufacturerId || entry.manufacturer || '';
+    found.set(id, entry.manufacturer || `Hersteller ${id}`);
+  }
+  return [...found].map(([id, name]) => ({ id, name })).sort((left, right) => left.name.localeCompare(right.name, 'de'));
+}
+
+export async function searchArticles(runtime: PlentyEnv, query: string, options: ArticleSearchOptions = {}): Promise<ArticleMatch[]> {
   const wanted = normalize(query);
-  if (wanted.length < 2) return [];
+  if (wanted.length < 2 && !normalize(options.manufacturer ?? '') && (!options.status || options.status === 'all')) return [];
 
   const known = KNOWN_ARTICLES.filter((entry) => {
     if (wanted === 'anfahrt' || wanted === 'anfahrtspauschale') return true;
     return entry.aliases.some((alias) => normalize(alias) === wanted);
   });
-  if (known.length) {
+  if (wanted.length >= 2 && known.length) {
     try {
       const hydrated = await findArticlesByVariationIds(runtime, known.map((entry) => entry.variationId));
       return known.map(({ aliases, ...entry }) => {
         void aliases;
         return hydrated.get(entry.variationId) ?? entry;
-      });
+      }).filter((entry) => matchesArticleFilters(entry, options));
     } catch {
       return known.map(({ aliases, ...entry }) => {
         void aliases;
         return entry;
-      });
+      }).filter((entry) => matchesArticleFilters(entry, options));
     }
   }
 
@@ -369,9 +458,10 @@ export async function searchArticles(runtime: PlentyEnv, query: string): Promise
   const tokens = specificTokens.length ? specificTokens : rawTokens;
 
   const matches = catalog
+    .filter((entry) => matchesArticleFilters(entry, options))
     .map((entry) => {
       const fields = [entry.title, entry.variationName, entry.model, entry.itemId, entry.variationId].map(normalize);
-      let score = 0;
+      let score = wanted.length >= 2 ? 0 : 1;
       for (const field of fields) {
         if (field === wanted) score = Math.max(score, 100);
         else if (field.startsWith(wanted)) score = Math.max(score, 85);
